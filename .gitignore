@@ -1,0 +1,18 @@
+# Xcode / XcodeGen
+ios/*.xcodeproj
+ios/DerivedData/
+xcuserdata/
+*.xcworkspace
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+# Libri e audio: mai in git
+*.rabook
+*.m4a
+*.m4b
+*.wav
+*.onnx
+# macOS
+.DS_Store
