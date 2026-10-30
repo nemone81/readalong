@@ -1,0 +1,95 @@
+name: ReadAlong
+options:
+  bundleIdPrefix: it.fabiocrestoni
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+  developmentLanguage: it
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    # Team "Fabio Crestoni". Sta qui e non in un file locale perche' il
+    # progetto Xcode si rigenera da questo file a ogni clone.
+    DEVELOPMENT_TEAM: "TXB2PND9T9"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  ReadAlong:
+    type: application
+    platform: iOS
+    sources:
+      - path: ReadAlong
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.fabiocrestoni.readalong
+        # Le chiavi semplici le genera Xcode dalle impostazioni; quelle a
+        # dizionario (tipi di documento, UTI) stanno nel plist qui sotto.
+        GENERATE_INFOPLIST_FILE: YES
+        # iPhone e iPad.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_CFBundleDisplayName: ReadAlong
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    info:
+      path: ReadAlong/Resources/Info.plist
+      properties:
+        # Senza queste XcodeGen scriverebbe "1.0" fisso, ignorando le impostazioni.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # L'audio continua a schermo bloccato (T9).
+        UIBackgroundModes: [audio]
+        # I libri si importano (copia), non si aprono sul posto: il file
+        # originale puo' stare su Dropbox o in un percorso non persistente.
+        LSSupportsOpeningDocumentsInPlace: false
+        # La cartella Documenti dell'app e' visibile in File e nel Finder.
+        UIFileSharingEnabled: true
+        # Il formato del libro-pacchetto: uno zip con estensione propria.
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: it.fabiocrestoni.rabook
+            UTTypeDescription: Libro ReadAlong
+            UTTypeConformsTo: [public.zip-archive, public.data]
+            UTTypeTagSpecification:
+              public.filename-extension: [rabook]
+        # "Apri in ReadAlong" da File, Dropbox, AirDrop.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Libro ReadAlong
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes: [it.fabiocrestoni.rabook]
+    entitlements:
+      path: ReadAlong/ReadAlong.entitlements
+      properties:
+        # Posizione, velocita' e segnalibri sincronizzati tra iPhone e iPad
+        # (T13). Con la firma automatica Xcode attiva la capability iCloud
+        # (key-value storage) sull'App ID al primo build firmato.
+        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(CFBundleIdentifier)
+
+  ReadAlongTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - ReadAlongTests
+    dependencies:
+      - target: ReadAlong
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: it.fabiocrestoni.readalong.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  ReadAlong:
+    build:
+      targets:
+        ReadAlong: all
+    test:
+      targets:
+        - ReadAlongTests
