@@ -46,8 +46,8 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 
 ### Checkpoint A
 - [x] `scripts/check.sh` verde su `main` (2026-10-30: 62 test Swift, 67 pytest, verificato sul ramo t06-reader prima del merge)
-- [ ] *Il Cigno nero* (`.rabook` generato da T2) in riproduzione sul simulatore con testo sincronizzato
-- [ ] Revisione di Fabio
+- [x] *Il Cigno nero* (`.rabook` generato da T2) in riproduzione sul simulatore con testo sincronizzato (2026-10-30, collaudo pilotato: play, tap, pausa+scroll+play)
+- [x] Revisione di Fabio (2026-10-30: approvato). Difetti del generatore emersi: EPUB da PDF senza `pdf_mode` → righe spezzate (usare il PDF come sorgente); frontespizio nel Prologo (T2b); Note e Bibliografia da escludere (`--chapters 1-24`)
 
 ## Fase 3 — Uso quotidiano (tutti in parallelo dopo A)
 
