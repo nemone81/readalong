@@ -106,7 +106,7 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 **Verifica.** Swift Testing con un `KeyValueStore` finto; collaudo iPhone+iPad; `scripts/check.sh`.
 **Dipendenze.** T7. **File.** `ios/ReadAlong/Sync/ProgressStore.swift`, `CloudKeyValueStore.swift`, `StateMerge.swift`, `ios/ReadAlongTests/StateMergeTests.swift`.
 
-### [ ] T14: Segnalibri (M)
+### [x] T14: Segnalibri (M) — integrato 2026-10-30 (sync tra dispositivi con T13)
 **Descrizione.** Pressione lunga su una frase → segnalibro (con nota opzionale); lista per libro con anteprima della frase e salto; cancellazione; salvati nel `BookState` e sincronizzati tramite T13.
 **Accettazione.** Creazione, lista, salto, cancellazione; dopo sync il segnalibro compare sull'altro dispositivo.
 **Verifica.** Test su aggiunta/rimozione/merge; collaudo manuale; `scripts/check.sh`.
