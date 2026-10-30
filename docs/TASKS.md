@@ -72,7 +72,7 @@ Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'
 **Verifica.** Collaudo su dispositivo (checklist in `docs/COLLAUDO.md`, sezione aggiunta da questo task); test unitari sulla costruzione del dizionario Now Playing; `scripts/check.sh`.
 **Dipendenze.** T6. **File.** `ios/ReadAlong/Playback/NowPlayingController.swift`, `AudioSessionController.swift`, `ios/ReadAlongTests/NowPlayingTests.swift`, `docs/COLLAUDO.md`.
 
-### [ ] T10: Velocità e timer di spegnimento (S→M)
+### [x] T10: Velocità e timer di spegnimento (S→M) — integrato 2026-10-30 (timer su minuti di ascolto; fade 3 s)
 **Descrizione.** Selettore velocità 0,8–2,0× a passi di 0,1, salvata nel `BookState`; `SleepTimer` (N minuti, fine capitolo) con fade-out di 3 s e annullamento; foglio impostazioni dal `PlayerBar`.
 **Accettazione.** Velocità applicata subito e ricordata dopo la riapertura; il timer ferma l'audio al momento giusto (test con durate corte) e a fine capitolo.
 **Verifica.** Swift Testing su `SleepTimer`; `scripts/check.sh`.
@@ -84,7 +84,7 @@ Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'
 **Verifica.** Test sul calcolo dell'avanzamento; `scripts/check.sh`.
 **Dipendenze.** T6. **File.** `ios/ReadAlong/UI/Reader/ChapterListView.swift`, `ios/ReadAlongTests/ChapterProgressTests.swift`.
 
-### [ ] T12: Impostazioni di lettura (S)
+### [x] T12: Impostazioni di lettura (S) — integrato 2026-10-30 (cambio carattere a riproduzione in corso da provare a mano al checkpoint B)
 **Descrizione.** Dimensione carattere (5 passi) e tema chiaro/scuro/sepia, globali, in `UserDefaults`; applicati alla `SentenceTextView` senza perdere la posizione.
 **Accettazione.** Cambio tema/carattere a riproduzione in corso: la frase evidenziata resta visibile.
 **Verifica.** Collaudo manuale; `scripts/check.sh`.
