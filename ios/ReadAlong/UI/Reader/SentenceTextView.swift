@@ -19,12 +19,16 @@ import UIKit
 ///   scorre o nei 5 s successivi;
 /// - riporta la prima frase visibile (`onFirstVisibleSentenceChange`) con un
 ///   debounce di 200 ms, solo quando cambia;
-/// - all'inizio di un trascinamento dell'utente chiama `onUserScroll`.
+/// - all'inizio di un trascinamento dell'utente chiama `onUserScroll`;
+/// - le frasi in `bookmarkedSentences` hanno un segno nel margine sinistro
+///   (T14), all'altezza della loro prima riga.
 struct SentenceTextView: UIViewRepresentable {
     let content: SentenceIndex
     let currentSentence: Int?
     var fontSize: CGFloat = 19
     var theme: ReadingTheme = .light
+    /// Indici delle frasi del capitolo con un segnalibro (T14).
+    var bookmarkedSentences: Set<Int> = []
     var onTapSentence: @MainActor (Int) -> Void = { _ in }
     var onLongPressSentence: @MainActor (Int) -> Void = { _ in }
     var onFirstVisibleSentenceChange: @MainActor (Int) -> Void = { _ in }
@@ -90,6 +94,10 @@ struct SentenceTextView: UIViewRepresentable {
         private var pendingAnchor: ScrollAnchor?
         private var lastReportedFirstVisible: Int?
         private var reportTask: Task<Void, Never>?
+        /// I segni dei segnalibri nel margine e cio' da cui dipende la loro
+        /// posizione: si ricalcolano solo quando cambia, non a ogni scroll.
+        private var bookmarkMarkers: [UIImageView] = []
+        private var markersKey: MarkersKey?
 
         func update(with view: SentenceTextView) {
             parent = view
@@ -112,6 +120,7 @@ struct SentenceTextView: UIViewRepresentable {
                 if chapterText.highlight(sentence: view.currentSentence) {
                     scrollToCurrentSentenceIfAllowed(animated: true)
                 }
+                updateBookmarkMarkers()
             } else {
                 // Capitolo nuovo: testo ricostruito, si riparte dall'alto o dalla frase corrente.
                 let chapterText = ChapterAttributedText(
@@ -122,6 +131,7 @@ struct SentenceTextView: UIViewRepresentable {
                 )
                 chapterText.highlight(sentence: view.currentSentence)
                 self.chapterText = chapterText
+                markersKey = nil
                 gate = AutoscrollGate()
                 lastReportedFirstVisible = nil
                 textView.setContentOffset(CGPoint(x: 0, y: -textView.adjustedContentInset.top), animated: false)
@@ -148,6 +158,62 @@ struct SentenceTextView: UIViewRepresentable {
                 scrollToCurrentSentenceIfAllowed(animated: false)
                 scheduleFirstVisibleReport()
             }
+            updateBookmarkMarkers()
+        }
+
+        // MARK: Segni dei segnalibri (T14)
+
+        /// Da cosa dipende la posizione dei segni.
+        struct MarkersKey: Equatable {
+            let sentences: Set<Int>
+            let fontSize: CGFloat
+            let width: CGFloat
+            let theme: ReadingTheme
+        }
+
+        /// Un segno `bookmark.fill` nel margine sinistro per ogni frase con
+        /// segnalibro, centrato sulla sua prima riga. Le viste stanno nel
+        /// contenuto della `UITextView` e scorrono con il testo; il colore e'
+        /// il tint ereditato (attenuato, come il resto, sotto un foglio).
+        private func updateBookmarkMarkers() {
+            guard let textView, let chapterText, let parent, textView.bounds.width > 0 else { return }
+            let key = MarkersKey(
+                sentences: parent.bookmarkedSentences,
+                fontSize: chapterText.fontSize,
+                width: textView.bounds.width,
+                theme: parent.theme
+            )
+            guard key != markersKey else { return }
+            markersKey = key
+
+            let ranges = key.sentences.sorted().compactMap { chapterText.content.characterRange(of: $0) }
+            while bookmarkMarkers.count > ranges.count {
+                bookmarkMarkers.removeLast().removeFromSuperview()
+            }
+            let image = UIImage(
+                systemName: "bookmark.fill",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: max(key.fontSize * 0.6, 9))
+            )
+            while bookmarkMarkers.count < ranges.count {
+                let marker = UIImageView()
+                marker.isAccessibilityElement = false
+                marker.isUserInteractionEnabled = false
+                marker.accessibilityIdentifier = "reader.bookmarkMarker"
+                textView.addSubview(marker)
+                bookmarkMarkers.append(marker)
+            }
+            for (marker, range) in zip(bookmarkMarkers, ranges) {
+                marker.image = image
+                marker.sizeToFit()
+                let firstLine = Self.rect(ofCharacterRange: NSRange(location: range.location, length: 1), in: textView)
+                marker.center = Self.markerCenter(firstLine: firstLine, leftInset: textView.textContainerInset.left)
+            }
+        }
+
+        /// Centro del segno: nel margine sinistro, a meta' fra il bordo e il
+        /// testo (ma almeno a 6 pt dal bordo), alla meta' della prima riga.
+        static func markerCenter(firstLine: CGRect, leftInset: CGFloat) -> CGPoint {
+            CGPoint(x: max(leftInset / 2, 6), y: firstLine.midY)
         }
 
         // MARK: Autoscroll
