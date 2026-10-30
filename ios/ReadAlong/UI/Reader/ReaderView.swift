@@ -8,6 +8,7 @@ struct ReaderView: View {
     let model: ReaderModel
     var fontSize: CGFloat = 19
     var theme: ReadingTheme = .light
+    @State private var isShowingChapters = false
 
     var body: some View {
         Group {
@@ -40,6 +41,16 @@ struct ReaderView: View {
         .navigationTitle(model.chapter?.title ?? model.book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Capitoli", systemImage: "list.bullet") {
+                    isShowingChapters = true
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingChapters) {
+            ChapterListView(model: model)
+        }
         .alert(
             "Errore",
             isPresented: Binding(
