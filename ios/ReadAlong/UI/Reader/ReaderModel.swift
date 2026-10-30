@@ -38,6 +38,8 @@ final class ReaderModel {
     /// Vero se l'utente ha trascinato il testo mentre l'audio era in pausa e
     /// da allora non ha dato un comando di posizione (tap, ±15 s, capitolo).
     @ObservationIgnored private(set) var userScrolledWhilePaused = false
+    /// Dove si salva lo stato del libro (T7); `nil` = nessun salvataggio.
+    @ObservationIgnored private var progressStore: ProgressStore?
 
     init(book: Book, reader: RABookReader, engine: PlayerEngine = PlayerEngine()) {
         self.book = book
@@ -74,6 +76,7 @@ final class ReaderModel {
     /// Carica il libro nel motore (in pausa, all'inizio) e inizia a seguirne le posizioni.
     func start() async throws {
         try await engine.load(book: book, reader: reader)
+        await restoreSavedState()
         let stream = await engine.positions
         positionsTask?.cancel()
         positionsTask = Task { [weak self] in
@@ -89,6 +92,7 @@ final class ReaderModel {
         positionsTask?.cancel()
         positionsTask = nil
         await engine.pause()
+        await saveCurrentPosition()
     }
 
     // MARK: - Azioni
@@ -177,6 +181,7 @@ final class ReaderModel {
     /// Aggiorna lo stato da una posizione del motore; tocca le proprieta'
     /// osservate solo quando cambiano, per non ridisegnare a vuoto a 10 Hz.
     func apply(_ position: PlaybackPosition) {
+        persist(position, wasPlaying: isPlaying)
         if position.chapter != chapterNumber || chapterContent == nil {
             loadChapter(position.chapter)
         }
@@ -205,6 +210,38 @@ final class ReaderModel {
             chapterContent = nil
             errorMessage = "Impossibile leggere il testo del capitolo \(number)."
         }
+    }
+
+    // MARK: - Stato salvato (T7)
+
+    /// Collega lo store dello stato: va chiamato prima di `start()`, che
+    /// riparte dalla posizione salvata.
+    func attach(_ store: ProgressStore) {
+        progressStore = store
+    }
+
+    /// Riporta il motore (appena caricato, in pausa) a posizione e velocita'
+    /// salvate. Se il capitolo salvato non c'e' piu' si resta all'inizio.
+    private func restoreSavedState() async {
+        guard let saved = progressStore?.state(for: book.id) else { return }
+        await engine.setRate(Float(saved.rate))
+        try? await engine.seek(chapter: saved.position.chapter, seconds: saved.position.seconds)
+    }
+
+    /// Passa la posizione allo store (con debounce); alla pausa salva subito.
+    private func persist(_ position: PlaybackPosition, wasPlaying: Bool) {
+        guard let progressStore else { return }
+        progressStore.updatePosition(BookState.Position(position), for: book.id)
+        if wasPlaying && !position.isPlaying {
+            progressStore.flush()
+        }
+    }
+
+    /// Salva subito la posizione attuale del motore (chiusura del libro).
+    private func saveCurrentPosition() async {
+        guard let progressStore, let position = await engine.currentPosition else { return }
+        progressStore.updatePosition(BookState.Position(position), for: book.id)
+        progressStore.flush()
     }
 
     private func perform(_ action: () async throws -> Void) async {
