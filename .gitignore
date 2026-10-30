@@ -8,6 +8,7 @@ xcuserdata/
 __pycache__/
 *.egg-info/
 .pytest_cache/
+.ruff_cache/
 # Libri e audio: mai in git
 *.rabook
 # ...tranne i pacchetti di prova minuscoli dei test iOS
@@ -16,5 +17,9 @@ __pycache__/
 *.m4b
 *.wav
 *.onnx
+# Eccezione: il pacchetto di prova (Pinocchio, pubblico dominio) serve ai test di makebook e dell'app
+!tools/makebook/tests/fixtures/*.rabook
+# Voci Piper scaricate (63 MB l'una)
+tools/makebook/voices/
 # macOS
 .DS_Store
