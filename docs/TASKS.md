@@ -38,14 +38,14 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 **Verifica.** Test unitari sulla tabella offset→frase; misura prestazioni documentata nel PR; `scripts/check.sh`.
 **Dipendenze.** T3. **File.** `ios/ReadAlong/UI/Reader/SentenceTextView.swift`, `ChapterAttributedText.swift`, `ios/ReadAlongTests/ChapterAttributedTextTests.swift`.
 
-### [ ] T6: `ReaderView` e ripresa dalla frase in vista (M)
+### [x] T6: `ReaderView` e ripresa dalla frase in vista (M)
 **Descrizione.** `ReaderModel` (`@MainActor @Observable`) collega T4 e T5: play/pausa, ±15 s, frase corrente evidenziata, tap → seek, regola di ripresa (se in pausa l'utente ha scrollato, play riparte dalla prima frase visibile). `PlayerBar` con copertina, titolo capitolo, tempo e barra. Entry point provvisorio: all'avvio apre la fixture se non c'è libreria.
 **Accettazione.** Sul simulatore: play, il testo segue; tap → salto; pausa, scroll, play → riparte dalla frase in vista; ±15 s attraversa il confine di capitolo.
 **Verifica.** Test della regola di ripresa in `ReaderModelTests`; collaudo manuale descritto nel PR con screenshot; `scripts/check.sh`.
 **Dipendenze.** T4, T5. **File.** `ios/ReadAlong/UI/Reader/ReaderView.swift`, `ReaderModel.swift`, `PlayerBar.swift`, `ios/ReadAlongTests/ReaderModelTests.swift`.
 
 ### Checkpoint A
-- [ ] `scripts/check.sh` verde su `main`
+- [x] `scripts/check.sh` verde su `main` (2026-10-30: 62 test Swift, 67 pytest, verificato sul ramo t06-reader prima del merge)
 - [ ] *Il Cigno nero* (`.rabook` generato da T2) in riproduzione sul simulatore con testo sincronizzato
 - [ ] Revisione di Fabio
 
