@@ -60,13 +60,13 @@ Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'
 **Verifica.** Swift Testing; `scripts/check.sh`.
 **Dipendenze.** T6. **File.** `ios/ReadAlong/Sync/BookState.swift`, `ProgressStore.swift`, `ios/ReadAlongTests/ProgressStoreTests.swift`, modifica a `ReaderModel.swift`.
 
-### [ ] T8: Libreria e importazione (M)
+### [x] T8: Libreria e importazione (M) — integrato 2026-10-30 (estrazione 430 MB in 3,6 s; libreria radice, riapertura ultimo libro)
 **Descrizione.** `LibraryView` (griglia: copertina, titolo, autore, durata, % avanzamento), importazione via `fileImporter` e via "Apri in…"/AirDrop (`onOpenURL`), progresso durante la copia, cancellazione con conferma, errori leggibili (formato non supportato, versione futura, file corrotto).
 **Accettazione.** Import di un `.rabook` da 350 MB dai File in < 15 s; il libro appare con copertina; riapertura dell'app → libreria persistente; import dello stesso libro non duplica.
 **Verifica.** Test del catalogo (`LibraryStore`); collaudo manuale su simulatore con il Cigno nero; `scripts/check.sh`.
 **Dipendenze.** T6. **File.** `ios/ReadAlong/UI/Library/LibraryView.swift`, `ImportFlow.swift`, `ios/ReadAlong/Package/LibraryStore.swift`, `ios/ReadAlongTests/LibraryStoreTests.swift`, modifica a `ReadAlongApp.swift`.
 
-### [ ] T9: Background, Now Playing e comandi remoti (M)
+### [x] T9: Background, Now Playing e comandi remoti (M) — integrato 2026-10-30 (collaudo su dispositivo al checkpoint B con docs/COLLAUDO.md)
 **Descrizione.** `Playback/NowPlayingController.swift`: `MPNowPlayingInfoCenter` (copertina, titolo libro, capitolo, durata, posizione, rate) e `MPRemoteCommandCenter` (play, pausa, toggle, ±15 s, capitolo precedente/successivo); gestione interruzioni (telefonata) e disconnessione cuffie (pausa).
 **Accettazione.** Schermo bloccato: audio continua 1 h; play/pausa e ±15 s da lock screen e da AirPods; sfilare le AirPods mette in pausa; copertina e capitolo corretti su lock screen.
 **Verifica.** Collaudo su dispositivo (checklist in `docs/COLLAUDO.md`, sezione aggiunta da questo task); test unitari sulla costruzione del dizionario Now Playing; `scripts/check.sh`.
@@ -78,7 +78,7 @@ Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'
 **Verifica.** Swift Testing su `SleepTimer`; `scripts/check.sh`.
 **Dipendenze.** T6, T7. **File.** `ios/ReadAlong/Playback/SleepTimer.swift`, `ios/ReadAlong/UI/Settings/PlaybackSettingsSheet.swift`, `ios/ReadAlongTests/SleepTimerTests.swift`, modifica a `ReaderModel.swift`.
 
-### [ ] T11: Indice dei capitoli (S)
+### [x] T11: Indice dei capitoli (S) — integrato 2026-10-30
 **Descrizione.** `ChapterListView`: titolo, durata, stato (letto / in corso con % / da leggere); tap → salto all'inizio del capitolo.
 **Accettazione.** Percentuali corrette rispetto alla posizione; salto funziona durante la riproduzione.
 **Verifica.** Test sul calcolo dell'avanzamento; `scripts/check.sh`.
