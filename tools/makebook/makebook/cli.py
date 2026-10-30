@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--chapters", help="capitoli da includere, numerati come in --list: es. 2-24 oppure 3,5,7-9"
     )
+    p.add_argument(
+        "--pdf-mode",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="ricuci le righe spezzate dei PDF (default: automatico, attivo per i .pdf e per gli EPUB"
+        " convertiti da PDF con calibre)",
+    )
     p.add_argument("--list", action="store_true", help="elenca i capitoli trovati ed esce, senza sintesi")
     p.add_argument("--title", help="titolo (default: dai metadati del libro)")
     p.add_argument("--author", help="autore (default: dai metadati del libro)")
@@ -65,11 +72,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def load_book(source: Path) -> Book:
-    """Legge un EPUB; un PDF passa prima da ``ebook-convert`` di calibre."""
+def load_book(source: Path, pdf_mode: bool | None = None) -> Book:
+    """Legge un EPUB; un PDF passa prima da ``ebook-convert`` di calibre.
+
+    ``pdf_mode`` ``None`` lascia decidere: sempre attivo per un PDF, per un EPUB lo decide
+    ``read_epub`` guardando se viene da un PDF convertito con calibre.
+    """
     suffix = source.suffix.lower()
     if suffix == ".epub":
-        return read_epub(source)
+        return read_epub(source, pdf_mode=pdf_mode)
     if suffix == ".pdf":
         convert = find_tool("ebook-convert", "/Applications/calibre.app/Contents/MacOS/ebook-convert")
         with tempfile.TemporaryDirectory(prefix="makebook-") as tmp:
@@ -78,7 +89,7 @@ def load_book(source: Path) -> Book:
             if r.returncode != 0 or not epub.is_file():
                 tail = "\n".join((r.stdout + r.stderr).strip().splitlines()[-5:])
                 raise EpubError(f"ebook-convert non è riuscito a convertire il PDF:\n{tail}")
-            return read_epub(epub, pdf_mode=True)
+            return read_epub(epub, pdf_mode=True if pdf_mode is None else pdf_mode)
     raise EpubError(f"formato non supportato: {suffix or '(senza estensione)'} (servono .epub o .pdf)")
 
 
@@ -107,7 +118,7 @@ def run(args: argparse.Namespace) -> int:
     if not source.is_file():
         print(f"makebook: file non trovato: {source.name}", file=sys.stderr)
         return 2
-    book = load_book(source)
+    book = load_book(source, args.pdf_mode)
     for w in book.warnings:
         print(f"attenzione: {w}", file=sys.stderr)
 

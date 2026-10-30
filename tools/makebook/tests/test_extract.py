@@ -9,7 +9,9 @@ from makebook.extract import (
     chapter_from_blocks,
     clean_blocks,
     clean_text,
+    drop_front_matter,
     fix_pdf_blocks,
+    html_is_pdf_conversion,
     html_to_blocks,
     is_page_number,
     join_broken_lines,
@@ -21,7 +23,7 @@ from makebook.extract import (
     text_for_synthesis,
 )
 
-from .conftest import make_epub, xhtml
+from .conftest import CALIBRE_OPF_METADATA, PDF_PAGE_HEAD, PDF_PAGE_TITLE, make_epub, xhtml
 
 # --------------------------------------------------------------------------- pulizia
 
@@ -162,6 +164,49 @@ def test_short_toc_entries_merge_into_next_chapter() -> None:
     assert chapters[0].paragraphs[:2] == ["Parte prima", "Capitolo 1"]
 
 
+WORDS = " ".join(["parola"] * 50) + "."
+
+
+def test_front_matter_before_the_first_real_chapter_is_dropped() -> None:
+    blocks = [
+        Block("Copertina"), Block("© Editore, 2008"), Block("www.editore.it"),
+        Block("Nome Autore"), Block("Titolo del libro"),
+        Block("Prologo"), Block(WORDS),
+        Block("Capitolo 1"), Block(WORDS),
+    ]  # fmt: skip
+    starts = [("Copertina", 0), ("Frontespizio", 3), ("Prologo", 5), ("Capitolo 1", 7)]
+    kept, dropped = drop_front_matter(blocks, starts)
+    assert kept == starts[2:]
+    assert dropped == 10  # parole da "Copertina" a "Titolo del libro"
+    chapters = split_chapters(blocks, kept)
+    assert chapters[0].paragraphs[:2] == ["Prologo", WORDS]
+
+
+def test_text_before_the_first_toc_anchor_is_counted_as_dropped() -> None:
+    blocks = [Block("Marchio editore"), Block("Prologo"), Block(WORDS)]
+    kept, dropped = drop_front_matter(blocks, [("Prologo", 1)])
+    assert (kept, dropped) == ([("Prologo", 1)], 2)
+
+
+def test_a_bare_part_heading_at_the_start_is_not_front_matter() -> None:
+    blocks = [Block("Parte prima"), Block("Capitolo 1"), Block(WORDS)]
+    starts = [("Parte prima", 0), ("Capitolo 1", 1)]
+    assert drop_front_matter(blocks, starts) == (starts, 0)
+
+
+def test_front_matter_goes_but_a_part_heading_after_it_stays() -> None:
+    blocks = [Block("Dedica"), Block("A mia madre."), Block("Parte prima"), Block("Capitolo 1"), Block(WORDS)]
+    starts = [("Dedica", 0), ("Parte prima", 2), ("Capitolo 1", 3)]
+    assert drop_front_matter(blocks, starts) == (starts[1:], 4)
+
+
+def test_a_book_of_short_entries_keeps_everything() -> None:
+    # una raccolta di poesie brevi: nessuna voce arriva a min_words, non c'è frontespizio da togliere
+    blocks = [Block("Poesia uno"), Block("Versi brevi."), Block("Poesia due"), Block("Altri versi.")]
+    starts = [("Poesia uno", 0), ("Poesia due", 2)]
+    assert drop_front_matter(blocks, starts) == (starts, 0)
+
+
 def test_parse_selection() -> None:
     assert parse_selection("2,5-7", 10) == [2, 5, 6, 7]
     assert parse_selection("3, 3", 10) == [3]
@@ -234,3 +279,73 @@ def test_read_epub_follows_toc_and_cleans_text(tmp_path: Path) -> None:
     everything = " ".join(p for c in book.chapters for p in c.paragraphs)
     assert "/Users" not in everything and ".pdf" not in everything and "Frontespizio" not in everything
     assert " 12 " not in f" {everything} "
+
+
+def _calibre_pdf_epub(path: Path, *, calibre: bool = True, from_pdf: bool = True) -> Path:
+    """Come un PDF passato da calibre: frontespizio prima del Prologo, una riga del PDF per <p>."""
+    line = "una riga del PDF che continua senza punto finale e va ben oltre gli ottanta caratteri, parecchio"
+    lines = "".join(f"<p>{line}</p>" for _ in range(6)) + "<p>e qui la frase finisce.</p>"
+    title, head = (PDF_PAGE_TITLE, PDF_PAGE_HEAD) if from_pdf else ("Un libro", "")
+    page = lambda body: xhtml(body, title=title, head=head)  # noqa: E731
+    return make_epub(
+        path,
+        {
+            "index_split_000.html": page(
+                '<p id="page_1"><img src="c.jpg"/></p><p id="page_2">Collana 634</p>'
+                "<p>© Editore S.p.A., Milano 2008</p><p>Titolo originale: The Book</p>"
+            ),
+            "index_split_001.html": page("<p>Nome Autore</p><p>Il libro</p><p>Traduzione di Qualcuno</p>"),
+            "index_split_002.html": page(f'<p id="page_5">Prologo</p><p>Sottotitolo</p>{lines * 3}'),
+            "index_split_003.html": page(f"<p>Capitolo uno</p>{lines * 3}"),
+        },
+        [
+            ("Copertina", "index_split_000.html#page_2"),
+            ("Frontespizio", "index_split_001.html"),
+            ("Prologo", "index_split_002.html"),
+            ("Capitolo uno", "index_split_003.html"),
+        ],
+        metadata=CALIBRE_OPF_METADATA if calibre else "",
+    )
+
+
+def test_read_epub_drops_front_matter_and_warns_with_word_count(tmp_path: Path) -> None:
+    book = read_epub(_calibre_pdf_epub(tmp_path / "c.epub"))
+    assert [c.title for c in book.chapters] == ["Prologo", "Capitolo uno"]
+    assert book.chapters[0].paragraphs[:2] == ["Prologo", "Sottotitolo"]
+    everything = " ".join(p for c in book.chapters for p in c.paragraphs)
+    assert "Collana" not in everything and "©" not in everything and "Traduzione" not in everything
+    assert any("18 parole" in w for w in book.warnings), book.warnings
+
+
+def test_pdf_mode_turns_on_for_calibre_epubs_made_from_a_pdf(tmp_path: Path) -> None:
+    book = read_epub(_calibre_pdf_epub(tmp_path / "c.epub"))
+    prologue = book.chapters[0].paragraphs
+    assert len(prologue) == 2 + 3  # titolo, sottotitolo, tre paragrafi ricuciti
+    assert prologue[2].endswith("e qui la frase finisce.")
+    assert any("PDF" in w for w in book.warnings), book.warnings
+
+
+def test_explicit_pdf_mode_wins_over_detection(tmp_path: Path) -> None:
+    book = read_epub(_calibre_pdf_epub(tmp_path / "c.epub"), pdf_mode=False)
+    assert len(book.chapters[0].paragraphs) == 2 + 3 * 7
+    assert not any("PDF" in w for w in book.warnings)
+
+
+@pytest.mark.parametrize(("calibre", "from_pdf"), [(False, True), (True, False)])
+def test_pdf_mode_stays_off_without_both_signals(tmp_path: Path, calibre: bool, from_pdf: bool) -> None:
+    book = read_epub(_calibre_pdf_epub(tmp_path / "c.epub", calibre=calibre, from_pdf=from_pdf))
+    assert len(book.chapters[0].paragraphs) == 2 + 3 * 7
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        (xhtml("<p>x</p>", title="/Users/a/b/Libro.PDF"), True),
+        (xhtml("<p>x</p>", head='<meta name="generator" content="PDF Reflow conversion"/>'), True),
+        (xhtml("<p>x</p>", head='<meta name="generator" content="pdftohtml 0.40"/>'), True),
+        (xhtml("<p>x</p>", title="Capitolo primo"), False),
+        (xhtml("<p>Il file si chiama libro.pdf</p>"), False),
+    ],
+)
+def test_html_is_pdf_conversion(html: str, expected: bool) -> None:
+    assert html_is_pdf_conversion(html) is expected
