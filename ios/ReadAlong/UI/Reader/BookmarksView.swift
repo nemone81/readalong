@@ -31,6 +31,8 @@ struct BookmarksListView: View {
                                     bookmark: bookmark
                                 )
                             }
+                            // Il testo della riga nei suoi colori, non in quello dei pulsanti.
+                            .tint(.primary)
                             .swipeActions(edge: .trailing) {
                                 Button("Elimina", systemImage: "trash", role: .destructive) {
                                     model.removeBookmark(bookmark)

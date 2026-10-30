@@ -173,7 +173,8 @@ struct SentenceTextView: UIViewRepresentable {
 
         /// Un segno `bookmark.fill` nel margine sinistro per ogni frase con
         /// segnalibro, centrato sulla sua prima riga. Le viste stanno nel
-        /// contenuto della `UITextView` e scorrono con il testo.
+        /// contenuto della `UITextView` e scorrono con il testo; il colore e'
+        /// il tint ereditato (attenuato, come il resto, sotto un foglio).
         private func updateBookmarkMarkers() {
             guard let textView, let chapterText, let parent, textView.bounds.width > 0 else { return }
             let key = MarkersKey(
@@ -203,7 +204,6 @@ struct SentenceTextView: UIViewRepresentable {
             }
             for (marker, range) in zip(bookmarkMarkers, ranges) {
                 marker.image = image
-                marker.tintColor = textView.tintColor
                 marker.sizeToFit()
                 let firstLine = Self.rect(ofCharacterRange: NSRange(location: range.location, length: 1), in: textView)
                 marker.center = Self.markerCenter(firstLine: firstLine, leftInset: textView.textContainerInset.left)
