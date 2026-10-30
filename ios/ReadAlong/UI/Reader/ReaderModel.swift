@@ -33,6 +33,10 @@ final class ReaderModel {
     private(set) var rate: Double = 1.0
     /// Timer di spegnimento (T10): comanda volume e pausa del motore.
     let sleepTimer: SleepTimer
+    /// Segnalibri del libro (T14), in ordine di creazione; li carica `attach`.
+    private(set) var bookmarks: [Bookmark] = []
+    /// Testo dei capitoli letti per le anteprime dei segnalibri.
+    @ObservationIgnored private var previewChapters: [Int: SentenceIndex] = [:]
 
     @ObservationIgnored private let reader: RABookReader
     @ObservationIgnored private let engine: PlayerEngine
@@ -264,6 +268,7 @@ final class ReaderModel {
     /// riparte dalla posizione salvata.
     func attach(_ store: ProgressStore) {
         progressStore = store
+        bookmarks = store.state(for: book.id)?.bookmarks ?? []
     }
 
     /// Riporta il motore (appena caricato, in pausa) a posizione e velocita'
@@ -297,6 +302,66 @@ final class ReaderModel {
         } catch {
             errorMessage = "Comando non riuscito: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Segnalibri (T14)
+
+extension ReaderModel {
+    /// Il segnalibro sulla frase `sentence`, se c'e'.
+    func bookmark(at sentence: SentenceID) -> Bookmark? {
+        bookmarks.bookmark(at: sentence)
+    }
+
+    /// Mette un segnalibro su `sentence` con una nota facoltativa e lo salva
+    /// subito. Se la frase ne ha gia' uno ne aggiorna la nota (mai due
+    /// segnalibri sulla stessa frase).
+    func addBookmark(at sentence: SentenceID, note: String?) {
+        let now = Bookmark.storedDate(Date())
+        changeBookmarks { $0.setBookmark(at: sentence, note: note, createdAt: now) }
+    }
+
+    /// Cambia la nota di un segnalibro (vuota = nessuna nota).
+    func updateBookmark(_ bookmark: Bookmark, note: String?) {
+        changeBookmarks { $0.updateNote(of: bookmark.id, to: note) }
+    }
+
+    func removeBookmark(_ bookmark: Bookmark) {
+        changeBookmarks { $0.removeBookmark(id: bookmark.id) }
+    }
+
+    /// Porta l'audio all'inizio della frase del segnalibro, cambiando capitolo
+    /// se serve; se stava suonando continua.
+    func jump(to bookmark: Bookmark) async {
+        userScrolledWhilePaused = false
+        await perform { try await engine.seek(to: bookmark.sentence) }
+    }
+
+    /// Il testo della frase `sentence`, anche di un capitolo non mostrato
+    /// (letto dal pacchetto una volta per capitolo). `nil` se non esiste.
+    func sentenceText(_ sentence: SentenceID) -> String? {
+        if let chapterContent, chapterContent.chapter == sentence.chapter {
+            return chapterContent.sentence(sentence)?.text
+        }
+        if let cached = previewChapters[sentence.chapter] {
+            return cached.sentence(sentence)?.text
+        }
+        guard let chapter = book.chapter(number: sentence.chapter),
+              let content = try? reader.sentenceIndex(of: chapter)
+        else { return nil }
+        previewChapters[sentence.chapter] = content
+        return content.sentence(sentence)?.text
+    }
+
+    /// Applica la modifica ai segnalibri dello stato del libro (salvataggio
+    /// immediato) e ne riprende la lista; senza store, solo in memoria.
+    private func changeBookmarks(_ change: (inout [Bookmark]) -> Void) {
+        guard let progressStore else {
+            change(&bookmarks)
+            return
+        }
+        progressStore.update(for: book.id) { change(&$0.bookmarks) }
+        bookmarks = progressStore.state(for: book.id)?.bookmarks ?? []
     }
 }
 
