@@ -180,6 +180,18 @@ actor PlayerEngine {
         emit()
     }
 
+    /// Va al secondo `seconds` del capitolo con numero `number` (riportato tra
+    /// 0 e la durata del capitolo). Serve a riprendere al secondo esatto, non
+    /// solo all'inizio di una frase. Se stava suonando continua a suonare.
+    func seek(chapter number: Int, seconds: Double) throws {
+        guard let book else { throw PlayerError.notLoaded }
+        guard let chapterIndex = book.chapters.firstIndex(where: { $0.number == number }) else {
+            throw PlayerError.unknownChapter(number)
+        }
+        try move(toChapterAt: chapterIndex, seconds: seconds)
+        emit()
+    }
+
     /// Va all'inizio del capitolo con numero `number` (`Chapter.number`).
     func skipToChapter(_ number: Int) throws {
         guard let book else { throw PlayerError.notLoaded }

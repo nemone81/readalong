@@ -18,7 +18,8 @@ import UIKit
 ///   porta nel terzo alto dello schermo, con animazione; mai mentre l'utente
 ///   scorre o nei 5 s successivi;
 /// - riporta la prima frase visibile (`onFirstVisibleSentenceChange`) con un
-///   debounce di 200 ms, solo quando cambia.
+///   debounce di 200 ms, solo quando cambia;
+/// - all'inizio di un trascinamento dell'utente chiama `onUserScroll`.
 struct SentenceTextView: UIViewRepresentable {
     let content: SentenceIndex
     let currentSentence: Int?
@@ -27,6 +28,9 @@ struct SentenceTextView: UIViewRepresentable {
     var onTapSentence: @MainActor (Int) -> Void = { _ in }
     var onLongPressSentence: @MainActor (Int) -> Void = { _ in }
     var onFirstVisibleSentenceChange: @MainActor (Int) -> Void = { _ in }
+    /// L'utente ha iniziato a trascinare il testo (non chiamata per gli
+    /// autoscroll): serve a distinguere la lettura dallo scorrimento automatico.
+    var onUserScroll: @MainActor () -> Void = {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -141,6 +145,7 @@ struct SentenceTextView: UIViewRepresentable {
 
         func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
             gate.userDidBeginScrolling()
+            parent?.onUserScroll()
         }
 
         func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -180,8 +185,8 @@ struct SentenceTextView: UIViewRepresentable {
                 y: textView.contentOffset.y + textView.adjustedContentInset.top
             )
             guard
-                let offset = Self.characterIndex(at: top, in: textView),
-                let sentence = chapterText.content.sentenceIndex(atCharacterOffset: offset),
+                let offset = Self.firstVisibleCharacterIndex(atTop: top, in: textView),
+                let sentence = Self.sentence(startingAtOrAfter: offset, in: chapterText.content),
                 sentence != lastReportedFirstVisible
             else { return }
             lastReportedFirstVisible = sentence
@@ -231,6 +236,33 @@ struct SentenceTextView: UIViewRepresentable {
                 fractionOfDistanceBetweenInsertionPoints: nil
             )
             return min(index, max(textView.textStorage.length - 1, 0))
+        }
+
+        /// Primo carattere visibile con il bordo alto dell'area visibile in `top`.
+        /// Se in cima c'e' solo il fondo di una riga gia' passata (interlinea,
+        /// spazio tra paragrafi), si prende il primo carattere della riga dopo:
+        /// altrimenti la "prima frase visibile" sarebbe una frase fuori schermo.
+        static func firstVisibleCharacterIndex(atTop top: CGPoint, in textView: UITextView) -> Int? {
+            guard let index = characterIndex(at: top, in: textView) else { return nil }
+            let layoutManager = textView.layoutManager
+            let glyph = layoutManager.glyphIndexForCharacter(at: index)
+            var lineGlyphs = NSRange()
+            let used = layoutManager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: &lineGlyphs)
+            guard used.maxY + textView.textContainerInset.top <= top.y else { return index }
+            let nextGlyph = NSMaxRange(lineGlyphs)
+            guard nextGlyph < layoutManager.numberOfGlyphs else { return index }
+            return layoutManager.characterIndexForGlyph(at: nextGlyph)
+        }
+
+        /// La frase che contiene `offset`; se `offset` cade su un separatore
+        /// (spazio o a capo dopo la fine di una frase), la frase seguente.
+        static func sentence(startingAtOrAfter offset: Int, in content: SentenceIndex) -> Int? {
+            guard let sentence = content.sentenceIndex(atCharacterOffset: offset) else { return nil }
+            if let range = content.characterRange(of: sentence), offset >= NSMaxRange(range),
+               sentence + 1 < content.count {
+                return sentence + 1
+            }
+            return sentence
         }
 
         /// Rettangolo che contiene il range, in coordinate della `textView`.

@@ -23,6 +23,11 @@ targets:
     platform: iOS
     sources:
       - path: ReadAlong
+      # Entry point provvisorio (T6): Pinocchio incluso nell'app, aperto al
+      # primo avvio se la libreria e' vuota. Riferito al file del generatore,
+      # non copiato: una sola copia nel repo. Da togliere con la libreria (T8).
+      - path: ../tools/makebook/tests/fixtures/pinocchio.rabook
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: it.fabiocrestoni.readalong
@@ -83,6 +88,9 @@ targets:
       # Pacchetti di prova: copiati come cartella "Fixtures" nel bundle dei test.
       - path: ReadAlongTests/Fixtures
         type: folder
+        buildPhase: resources
+      # Pinocchio (2 capitoli, audio vero) per i test del lettore, nella radice del bundle.
+      - path: ../tools/makebook/tests/fixtures/pinocchio.rabook
         buildPhase: resources
     dependencies:
       - target: ReadAlong

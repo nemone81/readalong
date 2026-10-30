@@ -139,6 +139,19 @@ struct PlayerEngineTests {
         #expect(back.sentence == SentenceID(chapter: 1, index: 3))
     }
 
+    @Test("seek(chapter:seconds:) va al secondo esatto; capitolo sconosciuto: errore")
+    func seeksToChapterSecond() async throws {
+        let engine = try await loadedEngine()
+        try await engine.seek(chapter: 2, seconds: 1.2)
+        let position = try #require(await engine.currentPosition)
+        #expect(position.chapter == 2)
+        #expect(abs(position.seconds - 1.2) <= 0.05)
+
+        await #expect(throws: PlayerEngine.PlayerError.unknownChapter(9)) {
+            try await engine.seek(chapter: 9, seconds: 0)
+        }
+    }
+
     @Test("seek(by:) in avanti attraversa il capitolo; ai bordi del libro si ferma")
     func seeksForwardAndClamps() async throws {
         let engine = try await loadedEngine()
