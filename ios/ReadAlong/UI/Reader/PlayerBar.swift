@@ -9,6 +9,7 @@ import UIKit
 struct PlayerBar: View {
     let model: ReaderModel
     @State private var cover: UIImage?
+    @State private var showsPlaybackSettings = false
 
     var body: some View {
         VStack(spacing: 10) {
@@ -25,6 +26,7 @@ struct PlayerBar: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                playbackSettingsButton
             }
 
             VStack(spacing: 4) {
@@ -78,6 +80,42 @@ struct PlayerBar: View {
         .task(id: model.book.id) {
             cover = model.coverData.flatMap(UIImage.init(data:))
         }
+        .sheet(isPresented: $showsPlaybackSettings) {
+            PlaybackSettingsSheet(model: model)
+        }
+    }
+
+    /// Velocita' e, se attivo, timer di spegnimento: apre il foglio (T10).
+    private var playbackSettingsButton: some View {
+        Button {
+            showsPlaybackSettings = true
+        } label: {
+            HStack(spacing: 6) {
+                if model.sleepTimer.isActive {
+                    Image(systemName: "moon.zzz.fill")
+                    Text(PlaybackSettingsSheet.timerLabel(model.sleepTimer.remaining))
+                        .accessibilityIdentifier("player.sleepTimer")
+                } else {
+                    Image(systemName: "moon.zzz")
+                }
+                Text(PlaybackSettingsSheet.rateLabel(model.rate))
+                    .accessibilityIdentifier("player.rate")
+            }
+            .font(.caption.weight(.semibold).monospacedDigit())
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.quaternary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("player.playbackSettings")
+        .accessibilityLabel("Velocità e timer")
+        .accessibilityValue(playbackSettingsValue)
+    }
+
+    private var playbackSettingsValue: String {
+        let rate = PlaybackSettingsSheet.rateLabel(model.rate)
+        guard model.sleepTimer.isActive else { return rate }
+        return rate + ", timer " + PlaybackSettingsSheet.timerLabel(model.sleepTimer.remaining)
     }
 
     @ViewBuilder
