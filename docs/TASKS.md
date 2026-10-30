@@ -10,7 +10,7 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 **Verifica.** `scripts/check.sh`; `xcodebuild … test`.
 **Dipendenze.** Nessuna. **File.** `ios/project.yml`, `ios/ReadAlong/App/ReadAlongApp.swift`, `ios/ReadAlong/Resources/Info.plist`, `ios/ReadAlong/ReadAlong.entitlements`, `ios/ReadAlongTests/SmokeTests.swift`, `scripts/check.sh`.
 
-### [ ] T2: `makebook`, generatore di `.rabook` (M)
+### [x] T2: `makebook`, generatore di `.rabook` (M)
 **Descrizione.** Pacchetto Python `tools/makebook` (uv, Python 3.12) che porta in forma di CLI gli script già scritti: `extract.py` (EPUB → capitoli puliti: niente `<title>`, note, numeri di pagina, path di file; titolo capitolo sempre paragrafo a sé), `synth.py` (Piper + espeak-ng, frase per frase con tempi, `…`→`.`), `package.py` (zip *stored* con `book.json`, `chapters/NN.json`, `audio/NN.m4a`, `cover.jpg`; `id` = sha256 di titolo+autore+testo), `cli.py` (`makebook libro.epub -o out.rabook --voice … [--chapters 2,24]`). I PDF passano prima da `ebook-convert` (calibre). Genera e committa la fixture `tools/makebook/tests/fixtures/pinocchio.rabook` da due capitoli brevi di Pinocchio (Collodi, pubblico dominio; EPUB da Liber Liber o Gutenberg).
 **Accettazione.** `uv run --project tools/makebook makebook pinocchio.epub -o pinocchio.rabook` produce un pacchetto valido (< 3 MB); pytest copre divisione in frasi, pulizia (incluso il caso del path nel `<title>`), validità dello zip e coerenza tempi ≤ durata audio; la fixture è committata (`.gitignore` con eccezione).
 **Verifica.** `uv run --project tools/makebook pytest`; `unzip -l` mostra solo voci "Stored".
