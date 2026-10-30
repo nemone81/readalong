@@ -84,6 +84,10 @@ struct SentenceTextView: UIViewRepresentable {
         private var gate = AutoscrollGate()
         /// Scroll da fare appena la vista ha una dimensione (primo caricamento).
         private var pendingInitialScroll = false
+        /// Ancora da riapplicare al prossimo layout dopo un cambio di carattere:
+        /// la UITextView ricalcola `contentSize` (e a volte riposiziona il
+        /// contenuto) nel suo `layoutSubviews`, dopo che l'abbiamo gia' spostata.
+        private var pendingAnchor: ScrollAnchor?
         private var lastReportedFirstVisible: Int?
         private var reportTask: Task<Void, Never>?
 
@@ -102,6 +106,8 @@ struct SentenceTextView: UIViewRepresentable {
                 chapterText.setStyle(fontSize: view.fontSize, theme: view.theme)
                 if let anchor {
                     restoreScrollAnchor(anchor)
+                    pendingAnchor = anchor
+                    textView.setNeedsLayout()
                 }
                 if chapterText.highlight(sentence: view.currentSentence) {
                     scrollToCurrentSentenceIfAllowed(animated: true)
@@ -131,6 +137,11 @@ struct SentenceTextView: UIViewRepresentable {
             let inset = Self.containerInset(forWidth: textView.bounds.width)
             if textView.textContainerInset != inset {
                 textView.textContainerInset = inset
+            }
+            if let anchor = pendingAnchor {
+                pendingAnchor = nil
+                restoreScrollAnchor(anchor)
+                scheduleFirstVisibleReport()
             }
             if pendingInitialScroll {
                 pendingInitialScroll = false
@@ -176,25 +187,35 @@ struct SentenceTextView: UIViewRepresentable {
                 return nil
             }
             let visible = Self.visibleRange(of: textView)
-            if let current = chapterText.highlightedSentence,
-               let range = chapterText.content.characterRange(of: current) {
-                let rect = Self.rect(ofCharacterRange: range, in: textView)
-                if rect.maxY > visible.lowerBound && rect.minY < visible.upperBound {
-                    return ScrollAnchor(
-                        range: range,
-                        offsetFromVisibleTop: rect.minY - visible.lowerBound,
-                        isCurrentSentence: true
-                    )
-                }
-            }
+            let current = chapterText.highlightedSentence
+                .flatMap { chapterText.content.characterRange(of: $0) }
+                .map { (range: $0, rect: Self.rect(ofCharacterRange: $0, in: textView)) }
             let top = CGPoint(x: textView.textContainerInset.left, y: visible.lowerBound)
-            guard let index = Self.firstVisibleCharacterIndex(atTop: top, in: textView) else { return nil }
-            let range = NSRange(location: index, length: 1)
-            let rect = Self.rect(ofCharacterRange: range, in: textView)
-            // La riga in cima puo' essere tagliata: dopo il cambio la si mostra intera.
+            let topLine = Self.firstVisibleCharacterIndex(atTop: top, in: textView)
+                .map { NSRange(location: $0, length: 1) }
+                .map { (range: $0, rect: Self.rect(ofCharacterRange: $0, in: textView)) }
+            return Self.scrollAnchor(current: current, topLine: topLine, visible: visible)
+        }
+
+        /// Sceglie l'ancora (logica pura): la frase corrente se interseca
+        /// l'area visibile, altrimenti il primo carattere della riga in cima,
+        /// che dopo il cambio si mostra intera (mai tagliata in alto).
+        static func scrollAnchor(
+            current: (range: NSRange, rect: CGRect)?,
+            topLine: (range: NSRange, rect: CGRect)?,
+            visible: ClosedRange<CGFloat>
+        ) -> ScrollAnchor? {
+            if let current, current.rect.maxY > visible.lowerBound, current.rect.minY < visible.upperBound {
+                return ScrollAnchor(
+                    range: current.range,
+                    offsetFromVisibleTop: current.rect.minY - visible.lowerBound,
+                    isCurrentSentence: true
+                )
+            }
+            guard let topLine else { return nil }
             return ScrollAnchor(
-                range: range,
-                offsetFromVisibleTop: max(rect.minY - visible.lowerBound, 0),
+                range: topLine.range,
+                offsetFromVisibleTop: max(topLine.rect.minY - visible.lowerBound, 0),
                 isCurrentSentence: false
             )
         }

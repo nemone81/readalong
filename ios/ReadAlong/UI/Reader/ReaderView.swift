@@ -36,11 +36,12 @@ struct ReaderView: View {
         }
         .background(Color(settings.theme.backgroundColor))
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(model: model)
+            PlayerBar(model: model, background: Color(settings.theme.backgroundColor))
         }
         .navigationTitle(model.chapter?.title ?? model.book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color(settings.theme.backgroundColor), for: .navigationBar)
         .preferredColorScheme(settings.theme.colorScheme)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
