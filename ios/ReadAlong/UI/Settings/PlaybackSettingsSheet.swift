@@ -17,7 +17,17 @@ struct PlaybackSettingsSheet: View {
                 Section {
                     timerChoices
                 } header: {
-                    Text("Timer di spegnimento")
+                    // Il residuo sta nell'intestazione: a meta' schermo il
+                    // footer resta fuori vista.
+                    HStack {
+                        Text("Timer di spegnimento")
+                        Spacer()
+                        if model.sleepTimer.isActive {
+                            Label(Self.timerLabel(model.sleepTimer.remaining), systemImage: "moon.zzz.fill")
+                                .monospacedDigit()
+                                .accessibilityIdentifier("settings.timerRemaining")
+                        }
+                    }
                 } footer: {
                     Text(timerStatus)
                         .accessibilityIdentifier("settings.timerStatus")
