@@ -55,7 +55,7 @@ audio/01.m4a         → AAC 64 kbps mono, un file per capitolo
 | App | Swift 6 (strict concurrency `complete`), SwiftUI, iOS 26+, iPhone e iPad, XcodeGen, zero dipendenze di terze parti |
 | Audio | `AVAudioPlayer` (`enableRate` per la velocità), `AVAudioSession` playback in background, `MPRemoteCommandCenter` + `MPNowPlayingInfoCenter` |
 | Testo | `UITextView` via `UIViewRepresentable` con `NSAttributedString` (evidenziazione per range, tap → `characterIndex` → frase). SwiftUI puro non dà il tap per frase dentro un paragrafo |
-| Persistenza locale | File JSON in `Application Support/<bookId>/state.json`; libri importati copiati in `Application Support/Books/<bookId>/` |
+| Persistenza locale | Stato per libro (`BookState`) in `Application Support/State/<bookId>.json`, separato dai file del libro; libri importati copiati in `Application Support/Books/<bookId>/` |
 | Sync | `NSUbiquitousKeyValueStore` (limite 1 MB: posizione, velocità, segnalibri per libro). Regola di merge: vince il record con `updatedAt` più recente |
 | Generatore | `tools/makebook` in Python 3.12 (`uv`), Piper + espeak-ng, ffmpeg; riusa gli script già scritti (`estrai_capitoli.py`, `piper_tts.py`, `piper_tts_timed.py`) |
 

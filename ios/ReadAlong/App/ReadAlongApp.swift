@@ -3,9 +3,19 @@ import UniformTypeIdentifiers
 
 @main
 struct ReadAlongApp: App {
+    @Environment(\.scenePhase) private var scenePhase
+    /// Posizione, velocita' e segnalibri dei libri (T7).
+    @State private var progressStore = ProgressStore()
+
     var body: some Scene {
         WindowGroup {
-            ProvisionalRootView()
+            ProvisionalRootView(progressStore: progressStore)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // In background (o verso la chiusura) si salva subito.
+            if phase != .active {
+                progressStore.flush()
+            }
         }
     }
 }
@@ -22,6 +32,8 @@ struct ProvisionalRootView: View {
 
     /// Ultimo libro aperto: provvisorio, lo sostituisce lo stato di T7/T8.
     private static let lastBookKey = "provisional.lastOpenedBookID"
+
+    let progressStore: ProgressStore
 
     @State private var phase: Phase = .loading
     @State private var isImporting = false
@@ -115,6 +127,7 @@ struct ProvisionalRootView: View {
             await current.stop()
         }
         let model = ReaderModel(book: book, reader: try importer.reader(for: book.id))
+        model.attach(progressStore)
         try await model.start()
         phase = .reading(model)
         UserDefaults.standard.set(book.id, forKey: Self.lastBookKey)
