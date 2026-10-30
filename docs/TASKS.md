@@ -51,6 +51,9 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 
 ## Fase 3 — Uso quotidiano (tutti in parallelo dopo A)
 
+### [x] T2b: makebook, frontespizio e modalità PDF automatica (S) — 2026-10-30
+Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'indice sotto le 40 parole con testo oltre il titolo) finiva nel Prologo; `pdf_mode` non si attivava sugli EPUB fatti da calibre a partire da un PDF. Ora `drop_front_matter` scarta e conta le parole; `pdf_mode=None` rileva calibre + pagine con `<title>` `.pdf`/`PDF Reflow`; flag `--pdf-mode/--no-pdf-mode`. 13 test pytest nuovi.
+
 ### [ ] T7: Stato locale e ripresa dopo kill (S)
 **Descrizione.** `Sync/BookState.swift` (posizione, velocità, segnalibri vuoti, `updatedAt`) e `Sync/ProgressStore.swift` con salvataggio JSON in `Application Support/<id>/state.json`, debounce 2 s e salvataggio immediato su pausa/background. All'apertura il lettore riparte dalla frase salvata.
 **Accettazione.** Kill e riapertura → stessa frase e stesso secondo; test di round-trip e di merge locale.
