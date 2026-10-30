@@ -7,7 +7,7 @@ import pytest
 from makebook.cli import build_parser, choose_title, job_key, main
 from makebook.extract import Chapter
 
-from .conftest import make_epub, xhtml
+from .conftest import CALIBRE_OPF_METADATA, PDF_PAGE_HEAD, PDF_PAGE_TITLE, make_epub, xhtml
 
 
 def test_defaults() -> None:
@@ -55,3 +55,33 @@ def test_bad_chapter_selection_is_an_error(tmp_path: Path, capsys: pytest.Captur
     )
     assert main([str(epub), "--chapters", "5"]) == 2
     assert "inesistente" in capsys.readouterr().err
+
+
+def test_pdf_mode_flag_is_three_state() -> None:
+    parse = build_parser().parse_args
+    assert parse(["l.epub"]).pdf_mode is None
+    assert parse(["l.epub", "--pdf-mode"]).pdf_mode is True
+    assert parse(["l.epub", "--no-pdf-mode"]).pdf_mode is False
+
+
+def test_list_reports_dropped_front_matter_and_honours_no_pdf_mode(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    line = "una riga del PDF che continua senza punto finale e va ben oltre gli ottanta caratteri"
+    body = "".join(f"<p>{line}</p>" for _ in range(30)) + "<p>Fine.</p>"
+    epub = make_epub(
+        tmp_path / "f.epub",
+        {
+            "a.xhtml": xhtml("<p>© Editore, Milano 2008</p>", title=PDF_PAGE_TITLE, head=PDF_PAGE_HEAD),
+            "b.xhtml": xhtml(f"<p>Prologo</p>{body}", title=PDF_PAGE_TITLE, head=PDF_PAGE_HEAD),
+        },
+        [("Copertina", "a.xhtml"), ("Prologo", "b.xhtml")],
+        metadata=CALIBRE_OPF_METADATA,
+    )
+    assert main([str(epub), "--list"]) == 0
+    out, err = capsys.readouterr()
+    assert out.split()[-1] == "Prologo"
+    assert "4 parole" in err and "PDF" in err
+
+    assert main([str(epub), "--list", "--no-pdf-mode"]) == 0
+    assert "PDF" not in capsys.readouterr().err

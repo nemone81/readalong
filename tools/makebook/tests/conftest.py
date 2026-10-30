@@ -16,8 +16,18 @@ CONTAINER = """<?xml version="1.0"?>
 </container>"""
 
 
-def make_epub(path: Path, docs: dict[str, str], toc: list[tuple[str, str]], *, title: str = "Libro") -> Path:
-    """EPUB 2 minimo: ``docs`` nome → XHTML (in ordine di spine), ``toc`` (titolo, href)."""
+def make_epub(
+    path: Path,
+    docs: dict[str, str],
+    toc: list[tuple[str, str]],
+    *,
+    title: str = "Libro",
+    metadata: str = "",
+) -> Path:
+    """EPUB 2 minimo: ``docs`` nome → XHTML (in ordine di spine), ``toc`` (titolo, href).
+
+    ``metadata`` è XML in più dentro ``<metadata>`` (es. le righe che vi scrive calibre).
+    """
     items = "\n".join(
         f'<item id="d{i}" href="{name}" media-type="application/xhtml+xml"/>' for i, name in enumerate(docs)
     )
@@ -27,6 +37,7 @@ def make_epub(path: Path, docs: dict[str, str], toc: list[tuple[str, str]], *, t
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:title>{title}</dc:title><dc:creator>Autrice Prova</dc:creator><dc:language>it-IT</dc:language>
     <meta name="cover" content="cov"/>
+    {metadata}
   </metadata>
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -52,11 +63,22 @@ def make_epub(path: Path, docs: dict[str, str], toc: list[tuple[str, str]], *, t
     return path
 
 
-def xhtml(body: str, title: str = "") -> str:
+def xhtml(body: str, title: str = "", head: str = "") -> str:
     return (
         '<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml">'
-        f"<head><title>{title}</title></head><body>{body}</body></html>"
+        f"<head><title>{title}</title>{head}</head><body>{body}</body></html>"
     )
+
+
+# Ciò che calibre scrive davvero quando converte un PDF (verificato su un EPUB di calibre 9.17):
+# contributor "bkp" e meta calibre:* nell'OPF, path del PDF nel <title> e generator di pdftohtml.
+CALIBRE_OPF_METADATA = (
+    '<dc:contributor xmlns:opf="http://www.idpf.org/2007/opf" opf:role="bkp">'
+    "calibre (9.17.0) [https://calibre-ebook.com]</dc:contributor>"
+    '<meta name="calibre:timestamp" content="2026-10-29T20:19:42+00:00"/>'
+)
+PDF_PAGE_TITLE = "/Users/qualcuno/libri/Un libro.pdf"
+PDF_PAGE_HEAD = '<meta content="PDF Reflow conversion" name="generator"/>'
 
 
 def pytest_configure(config: pytest.Config) -> None:

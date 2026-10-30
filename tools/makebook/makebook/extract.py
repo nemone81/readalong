@@ -195,6 +195,39 @@ def split_chapters(
     return chapters
 
 
+def drop_front_matter(
+    blocks: list[Block], starts: list[tuple[str, int]], *, min_words: int = 40
+) -> tuple[list[tuple[str, int]], int]:
+    """Toglie il materiale che precede il primo vero capitolo e dice quante parole ha tolto.
+
+    Si scarta sempre il testo prima della prima voce dell'indice. Poi, tra le voci brevi
+    (< ``min_words``) che vengono prima della prima voce lunga, sono materiale editoriale
+    (copertina, colophon, frontespizio, dedica) quelle con del testo oltre al titolo: vanno via
+    loro e tutto ciò che le precede. Un'intestazione nuda (``Parte prima``) che segue resta e
+    confluisce nel capitolo dopo, come in ``split_chapters``. Se nessuna voce arriva a
+    ``min_words`` (raccolte di testi brevi) non si scarta nessuna voce.
+
+    Restituisce le voci rimaste e le parole scartate.
+    """
+    if not starts:
+        return starts, 0
+    first_long: int | None = None
+    has_body: list[bool] = []
+    for k, (title, start) in enumerate(starts):
+        end = starts[k + 1][1] if k + 1 < len(starts) else len(blocks)
+        chapter = chapter_from_blocks(title, blocks[start:end])
+        if chapter.words >= min_words:
+            first_long = k
+            break
+        has_body.append(len(chapter.paragraphs) > 1)
+    cut = 0
+    if first_long is not None:
+        cut = max((k + 1 for k, body in enumerate(has_body) if body), default=0)
+    kept = starts[cut:]
+    dropped = sum(len(b.text.split()) for b in blocks[: kept[0][1]])
+    return kept, dropped
+
+
 def parse_selection(spec: str, count: int) -> list[int]:
     """``"2,5-7"`` → ``[2, 5, 6, 7]`` (numeri da 1). Errore se fuori dall'intervallo."""
     chosen: list[int] = []
@@ -403,6 +436,7 @@ class _Opf:
     cover: str | None
     cover_type: str | None
     base_dir: str
+    calibre: bool = False  # l'OPF dichiara calibre come produttore
 
 
 def _read_opf(z: zipfile.ZipFile) -> _Opf:
@@ -461,18 +495,58 @@ def _read_opf(z: zipfile.ZipFile) -> _Opf:
         cover=cover,
         cover_type=cover_type,
         base_dir=base_dir,
+        calibre=made_by_calibre(opf),
     )
+
+
+def made_by_calibre(opf: ElementTree.Element) -> bool:
+    """Calibre firma l'OPF con ``<dc:contributor>calibre (…)`` e ``<meta name="calibre:…">``."""
+    for el in opf.iter():
+        tag = _local(el.tag)
+        if tag == "contributor" and "calibre" in (el.text or "").lower():
+            return True
+        if tag == "meta" and (el.get("name") or "").startswith("calibre:"):
+            return True
+    return False
+
+
+_HTML_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_HTML_META = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
+_HTML_ATTR = re.compile(r"""([\w:-]+)\s*=\s*(["'])(.*?)\2""", re.DOTALL)
+_PDF_GENERATOR = re.compile(r"pdftohtml|pdf reflow", re.IGNORECASE)
+
+
+def html_is_pdf_conversion(html: str) -> bool:
+    """Una pagina prodotta da calibre a partire da un PDF.
+
+    Calibre lascia due tracce nell'``<head>`` di ogni pagina: il path del PDF sorgente nel
+    ``<title>`` e ``<meta name="generator" content="PDF Reflow conversion">`` (pdftohtml).
+    """
+    body = html.lower().find("<body")
+    head = html if body < 0 else html[:body]
+    title = _HTML_TITLE.search(head)
+    if title and unescape(title.group(1)).strip().lower().endswith(".pdf"):
+        return True
+    for tag in _HTML_META.findall(head):
+        attrs = {k.lower(): v for k, _, v in _HTML_ATTR.findall(tag)}
+        if attrs.get("name", "").lower() == "generator" and _PDF_GENERATOR.search(attrs.get("content", "")):
+            return True
+    return False
 
 
 def _decode(data: bytes) -> str:
     return data.decode("utf-8", errors="replace")
 
 
-def read_epub(path: Path, *, pdf_mode: bool = False, min_words: int = 40) -> Book:
+def read_epub(path: Path, *, pdf_mode: bool | None = None, min_words: int = 40) -> Book:
     """Legge un EPUB e restituisce il libro diviso in capitoli secondo l'indice.
 
     ``pdf_mode`` attiva le correzioni per gli EPUB ricavati da PDF con calibre: righe spezzate
-    da ricucire, sillabazione, testatine ripetute.
+    da ricucire, sillabazione, testatine ripetute. Con ``None`` si decide da sé: attivo se l'OPF
+    è firmato da calibre e almeno una pagina porta le tracce di un PDF (``html_is_pdf_conversion``).
+
+    Il materiale prima del primo capitolo (copertina, colophon, frontespizio, dedica) è scartato
+    (``drop_front_matter``); le parole scartate finiscono negli avvisi.
     """
     with zipfile.ZipFile(path) as z:
         opf = _read_opf(z)
@@ -486,10 +560,13 @@ def read_epub(path: Path, *, pdf_mode: bool = False, min_words: int = 40) -> Boo
 
         blocks: list[Block] = []
         positions: dict[tuple[str, str | None], int] = {}
+        from_pdf = False
         for doc in opf.spine:
             if doc not in names or doc == opf.nav:
                 continue
-            raw, anchors = html_to_blocks(_decode(z.read(doc)))
+            html = _decode(z.read(doc))
+            from_pdf = from_pdf or html_is_pdf_conversion(html)
+            raw, anchors = html_to_blocks(html)
             # La pulizia si fa documento per documento, così gli indici delle ancore restano validi.
             by_pos: dict[int, list[str]] = {}
             for frag, pos in anchors.items():
@@ -519,9 +596,20 @@ def read_epub(path: Path, *, pdf_mode: bool = False, min_words: int = 40) -> Boo
         warnings.append("indice assente o inutilizzabile: un solo capitolo")
         starts = [(opf.title or "Testo", 0)]
 
+    if pdf_mode is None:
+        pdf_mode = opf.calibre and from_pdf
+        if pdf_mode:
+            warnings.append(
+                "EPUB convertito da un PDF con calibre: modalità PDF attiva (--no-pdf-mode per spegnerla)"
+            )
     if pdf_mode:
         blocks, starts = fix_pdf_blocks(blocks, starts)
-    chapters = split_chapters(blocks, starts, min_words=min_words)
+    kept, dropped = drop_front_matter(blocks, starts, min_words=min_words)
+    if dropped:
+        skipped = [title for title, _ in starts[: len(starts) - len(kept)]]
+        where = f" ({', '.join(skipped)})" if skipped else ""
+        warnings.append(f"scartate {dropped} parole prima del primo capitolo{where}")
+    chapters = split_chapters(blocks, kept, min_words=min_words)
 
     return Book(
         title=opf.title,

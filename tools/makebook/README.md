@@ -63,6 +63,7 @@ Opzioni utili:
 | `--voice` | `it_IT-paola-medium` | nome della voce in `--voices-dir`, o path di un `.onnx` |
 | `--chapters` | tutti | capitoli da includere |
 | `--title`, `--author`, `--language` | dai metadati dell'EPUB | |
+| `--pdf-mode`, `--no-pdf-mode` | automatico | forza accesa o spenta la ricucitura delle righe dei PDF (vedi sotto) |
 | `--jobs` | 4 | capitoli sintetizzati in parallelo (un processo Piper ciascuno) |
 | `--work-dir` | temporanea | tiene audio e tempi dei capitoli: se la generazione si interrompe e la rilanci con la stessa cartella, i capitoli già fatti non si rifanno |
 
@@ -78,9 +79,17 @@ uv run --project tools/makebook makebook "Il Cigno nero.pdf" -o "Il Cigno nero.r
   --title "Il Cigno nero" --author "Nassim Nicholas Taleb" --chapters 2-24 --work-dir ~/makebook-cigno
 ```
 
+Se hai già l'EPUB fatto da calibre a partire dal PDF, puoi passare direttamente quello: la modalità PDF si accende da sola quando valgono **entrambe** queste condizioni (sono le tracce che calibre 9 lascia davvero nel file):
+
+- l'OPF è firmato da calibre: `<dc:contributor opf:role="bkp">calibre (…)</dc:contributor>` oppure un `<meta name="calibre:…">`;
+- almeno una pagina viene da un PDF: `<title>` che finisce in `.pdf` (calibre ci mette il path del PDF sorgente) oppure `<meta name="generator" content="PDF Reflow conversion">` (o `pdftohtml`).
+
+Quando succede lo dice su stderr. `--no-pdf-mode` la spegne, `--pdf-mode` la forza anche su EPUB che non hanno quelle tracce. Senza la modalità PDF ogni riga del PDF diventerebbe un paragrafo e le frasi verrebbero spezzate a metà.
+
 ## Cosa fa con il testo
 
-- Segue l'indice dell'EPUB (`toc.ncx`, oppure il `nav` di EPUB 3); il testo prima della prima voce (copertina, frontespizio) è scartato. Le voci con meno di 40 parole (intestazioni di Parte) confluiscono nel capitolo dopo.
+- Segue l'indice dell'EPUB (`toc.ncx`, oppure il `nav` di EPUB 3). Le voci con meno di 40 parole (intestazioni di Parte) confluiscono nel capitolo dopo.
+- Scarta il materiale prima del primo capitolo e su stderr dice quante parole ha tolto (`attenzione: scartate 47 parole prima del primo capitolo (Copertina, Frontespizio, Dedica)`): il testo prima della prima voce dell'indice e, prima della prima voce lunga almeno 40 parole, le voci brevi che hanno testo oltre al titolo (copertina, colophon, frontespizio, dedica). Un'intestazione nuda come «Parte prima» resta e va col capitolo dopo; se nessuna voce arriva a 40 parole (raccolte di testi brevi) non si scarta nessuna voce. Una voce editoriale lunga (un colophon di 52 parole) resta invece un capitolo: si esclude con `--chapters`.
 - Il titolo del capitolo è sempre il primo paragrafo, da solo.
 - Scarta: `<title>` delle pagine (calibre ci mette il path del PDF), note in `<sup>` e `<aside>`, rimandi `[12]`, numeri di pagina, didascalie delle figure, righe che sono path o nomi di file. Prima di scrivere il pacchetto controlla che nessun path dell'utente sia finito nel testo, altrimenti si ferma.
 - Divide i paragrafi in frasi (`. ! ? …`, con virgolette di chiusura attaccate; non spezza dopo abbreviazioni come `sig.`, iniziali, numeri come `3.30`, né prima di un inciso in minuscolo come «— Un re! — diranno…»).
