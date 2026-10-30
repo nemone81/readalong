@@ -4,7 +4,7 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 
 ## Fase 0 — Fondamenta
 
-### [ ] T1: Scheletro dell'app Xcode (S→M)
+### [x] T1: Scheletro dell'app Xcode (S→M)
 **Descrizione.** Progetto XcodeGen `ios/project.yml` con target `ReadAlong` (SwiftUI, iOS 26, iPhone+iPad, Swift 6 strict) e `ReadAlongTests` (Swift Testing); entitlement e `Info.plist` già pronti per il futuro: `UIBackgroundModes: audio`, iCloud KVS, UTI esportato `it.fabiocrestoni.rabook` (conforme a `public.zip-archive`, estensione `rabook`) e `CFBundleDocumentTypes`. `scripts/check.sh` esegue xcodegen + build + test (+ pytest se `tools/makebook` esiste).
 **Accettazione.** `scripts/check.sh` verde da zero; l'app si avvia sul simulatore con una schermata vuota "Libreria"; un test di esempio passa.
 **Verifica.** `scripts/check.sh`; `xcodebuild … test`.
