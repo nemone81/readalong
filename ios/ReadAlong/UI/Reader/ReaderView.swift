@@ -10,6 +10,14 @@ struct ReaderView: View {
     @State private var settings = ReadingSettings.shared
     @State private var isShowingSettings = false
     @State private var isShowingChapters = false
+    @State private var isShowingBookmarks = false
+    /// La frase della pressione lunga: apre il foglio del segnalibro (T14).
+    @State private var bookmarkSentence: SentenceID?
+
+    /// Indici delle frasi del capitolo `chapter` con un segnalibro.
+    private func bookmarkedSentences(in chapter: Int) -> Set<Int> {
+        Set(model.bookmarks.lazy.filter { $0.sentence.chapter == chapter }.map(\.sentence.index))
+    }
 
     var body: some View {
         Group {
@@ -19,8 +27,12 @@ struct ReaderView: View {
                     currentSentence: model.currentSentenceIndex,
                     fontSize: settings.fontSize,
                     theme: settings.theme,
+                    bookmarkedSentences: bookmarkedSentences(in: content.chapter),
                     onTapSentence: { index in
                         Task { await model.tapSentence(index) }
+                    },
+                    onLongPressSentence: { index in
+                        bookmarkSentence = content.id(of: index)
                     },
                     onFirstVisibleSentenceChange: { index in
                         model.firstVisibleSentenceChanged(index)
@@ -46,6 +58,11 @@ struct ReaderView: View {
         .preferredColorScheme(settings.theme.colorScheme)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                Button("Segnalibri", systemImage: "bookmark") {
+                    isShowingBookmarks = true
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button("Capitoli", systemImage: "list.bullet") {
                     isShowingChapters = true
                 }
@@ -62,6 +79,14 @@ struct ReaderView: View {
         .sheet(isPresented: $isShowingSettings) {
             ReadingSettingsSheet(settings: settings)
         }
+        .sheet(isPresented: $isShowingBookmarks) {
+            BookmarksListView(model: model)
+        }
+        .sheet(item: $bookmarkSentence) { sentence in
+            BookmarkEditorSheet(model: model, sentence: sentence)
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: bookmarkSentence) { _, new in new != nil }
+        .sensoryFeedback(.success, trigger: model.bookmarks) { old, new in new != old && new.count >= old.count }
         .alert(
             "Errore",
             isPresented: Binding(
