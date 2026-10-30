@@ -18,7 +18,7 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 
 ## Fase 1 — Contratto
 
-### [ ] T3: Modello e lettore di `.rabook` (M)
+### [x] T3: Modello e lettore di `.rabook` (M)
 **Descrizione.** `Model/`: `Book`, `Chapter`, `Sentence`, `SentenceID(chapter, index)`, `Progress`, tutti `Codable`/`Sendable`. `Package/ZipReader.swift` (central directory, solo voci stored, errori tipizzati), `Package/RABookReader.swift` (valida `book.json`, versione formato, apre capitoli a richiesta), `Package/RABookImporter.swift` (copia il pacchetto in `Application Support/Books/<id>/` e ne scompatta le voci; idempotente). `Model/SentenceIndex.swift`: frase ↔ tempo (ricerca binaria) e frase ↔ offset carattere.
 **Accettazione.** Con la fixture Pinocchio: apre il libro, elenca capitoli, trova la frase a un dato secondo, rifiuta uno zip con voci compresse e un `book.json` con `versioneFormato: 2` con errori distinti.
 **Verifica.** Swift Testing su tutti i casi sopra; `scripts/check.sh`.
