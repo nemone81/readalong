@@ -38,6 +38,10 @@ final class ReaderModel {
     /// Vero se l'utente ha trascinato il testo mentre l'audio era in pausa e
     /// da allora non ha dato un comando di posizione (tap, ±15 s, capitolo).
     @ObservationIgnored private(set) var userScrolledWhilePaused = false
+    /// Lock screen, comandi remoti e sessione audio (T9): vedi `startSystemPlayback()`.
+    @ObservationIgnored private var nowPlaying: NowPlayingController?
+    @ObservationIgnored private var audioSession: AudioSessionController?
+    @ObservationIgnored private var nowPlayingTask: Task<Void, Never>?
 
     init(book: Book, reader: RABookReader, engine: PlayerEngine = PlayerEngine()) {
         self.book = book
@@ -49,6 +53,7 @@ final class ReaderModel {
 
     isolated deinit {
         positionsTask?.cancel()
+        nowPlayingTask?.cancel()
     }
 
     // MARK: - Stato derivato
@@ -82,12 +87,14 @@ final class ReaderModel {
                 self.apply(position)
             }
         }
+        try await startSystemPlayback()
     }
 
     /// Ferma l'audio e smette di seguire le posizioni (prima di aprire un altro libro).
     func stop() async {
         positionsTask?.cancel()
         positionsTask = nil
+        stopSystemPlayback()
         await engine.pause()
     }
 
@@ -213,5 +220,84 @@ final class ReaderModel {
         } catch {
             errorMessage = "Comando non riuscito: \(error.localizedDescription)"
         }
+    }
+}
+
+// MARK: - Lock screen, comandi remoti e sessione audio (T9)
+
+extension ReaderModel {
+    /// Pubblica il Now Playing seguendo un flusso di posizioni tutto suo, registra
+    /// i comandi remoti (che chiamano le azioni del model) e ascolta interruzioni
+    /// e cuffie sfilate.
+    private func startSystemPlayback() async throws {
+        stopSystemPlayback()
+
+        let session = AudioSessionController(
+            isPlaying: { [weak self] in self?.isPlaying ?? false },
+            perform: { [weak self] action in
+                guard let self else { return }
+                switch action {
+                case .pause: Task { await self.pause() }
+                case .resume: Task { await self.play() }
+                case .none: break
+                }
+            }
+        )
+        try session.start()
+        audioSession = session
+
+        let controller = NowPlayingController(book: book, coverData: coverData)
+        controller.registerRemoteCommands(
+            RemoteCommandActions(
+                play: { [weak self] in await self?.play() },
+                pause: { [weak self] in await self?.pause() },
+                togglePlayPause: { [weak self] in await self?.togglePlay() },
+                skip: { [weak self] seconds in await self?.skip(by: seconds) },
+                previousChapter: { [weak self] in await self?.previousChapter() },
+                nextChapter: { [weak self] in await self?.nextChapter() },
+                seekInChapter: { [weak self] seconds in await self?.seekInChapter(to: seconds) }
+            ),
+            skipInterval: Self.skipInterval
+        )
+        nowPlaying = controller
+
+        let stream = await engine.positions
+        nowPlayingTask = Task { [weak self] in
+            for await position in stream {
+                guard let self else { return }
+                let rate = await self.engine.rate
+                self.nowPlaying?.update(position: position, rate: rate)
+            }
+        }
+    }
+
+    private func stopSystemPlayback() {
+        nowPlayingTask?.cancel()
+        nowPlayingTask = nil
+        nowPlaying?.invalidate()
+        nowPlaying = nil
+        audioSession?.stop()
+        audioSession = nil
+    }
+
+    /// "Capitolo precedente" dai comandi remoti: inizio del capitolo in corso
+    /// se si e' oltre i primi secondi, altrimenti il capitolo prima.
+    func previousChapter() async {
+        guard let target = NowPlayingController.previousChapterTarget(
+            book: book, chapter: chapterNumber, seconds: chapterTime
+        ) else { return }
+        await goToChapter(target)
+    }
+
+    /// "Capitolo successivo" dai comandi remoti; all'ultimo capitolo non fa nulla.
+    func nextChapter() async {
+        guard let target = NowPlayingController.nextChapterTarget(book: book, chapter: chapterNumber) else { return }
+        await goToChapter(target)
+    }
+
+    /// Scrub dal lock screen: secondo `seconds` del capitolo in corso.
+    func seekInChapter(to seconds: TimeInterval) async {
+        userScrolledWhilePaused = false
+        await perform { try await engine.seek(chapter: chapterNumber, seconds: seconds) }
     }
 }
