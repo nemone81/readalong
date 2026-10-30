@@ -91,9 +91,12 @@ Emerso al checkpoint A: il frontespizio (Copertina, Colophon, Dedica: voci dell'
 **Dipendenze.** T6. **File.** `ios/ReadAlong/UI/Settings/ReadingSettings.swift`, `ReadingSettingsSheet.swift`.
 
 ### Checkpoint B
-- [ ] Build su iPhone di Fabio (firma di sviluppo, senza TestFlight)
-- [ ] Import del Cigno nero dai File, ascolto in auto con lock screen, riapertura al punto giusto
-- [ ] Revisione di Fabio
+- [x] Build su iPhone di Fabio (2026-10-30, `ios/Tools/build-device.sh`; entitlement iCloud escluso finché Apple non ha il PLA accettato)
+- [x] Import del Cigno nero da Dropbox e lettura sull'iPhone (2026-10-30; lock screen e auto da verificare con `docs/COLLAUDO.md`)
+- [x] Revisione di Fabio (2026-10-30: «funziona ma ho delle osservazioni»: righe spezzate → dati vecchi, rigenerazione in corso; stacco tra paragrafi troppo grande → T12b)
+
+### [ ] T12b: Stacco tra paragrafi a mezza riga (XS)
+Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire la causa con un test che misura, portare lo stacco a ~mezza riga senza disallineare `SentenceIndex.characterRanges`.
 
 ## Fase 4 — Sync ed extra
 
