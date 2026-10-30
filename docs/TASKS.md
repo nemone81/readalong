@@ -32,7 +32,7 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 **Verifica.** Swift Testing (riproduzione reale su simulatore, timeout corti); `scripts/check.sh`.
 **Dipendenze.** T3. **File.** `ios/ReadAlong/Playback/PlayerEngine.swift`, `PlaybackPosition.swift`, `ios/ReadAlongTests/PlayerEngineTests.swift`.
 
-### [ ] T5: `SentenceTextView` (M)
+### [x] T5: `SentenceTextView` (M)
 **Descrizione.** `UIViewRepresentable` su `UITextView` non editabile: riceve il capitolo e la frase corrente, evidenzia solo quel range (sfondo + grassetto leggero), scorre per tenerla visibile se l'utente non sta scrollando, riporta la prima frase visibile e i tap (`onTapSentence`). Stile: dimensione carattere e tema da parametri.
 **Accettazione.** Con il capitolo più lungo della fixture (e, a mano, con il capitolo 10 del Cigno nero): cambio frase a 10 Hz senza scatti (< 4 ms per aggiornamento misurati con `os_signpost`); tap su una frase chiama `onTapSentence` con l'id giusto; scroll manuale sospende l'autoscroll per 5 s.
 **Verifica.** Test unitari sulla tabella offset→frase; misura prestazioni documentata nel PR; `scripts/check.sh`.
