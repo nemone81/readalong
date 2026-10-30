@@ -8,6 +8,8 @@ import UIKit
 /// aggiornamenti a 10 Hz ridisegnano solo lei e non il testo.
 struct PlayerBar: View {
     let model: ReaderModel
+    /// Sfondo della barra: il colore del tema di lettura (T12); `nil` = materiale `.bar`.
+    var background: Color?
     @State private var cover: UIImage?
     @State private var showsPlaybackSettings = false
 
@@ -76,7 +78,7 @@ struct PlayerBar: View {
         .padding(.top, 12)
         .padding(.bottom, 8)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        .background(background.map(AnyShapeStyle.init) ?? AnyShapeStyle(.bar))
         .task(id: model.book.id) {
             cover = model.coverData.flatMap(UIImage.init(data:))
         }
