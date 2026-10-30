@@ -97,6 +97,62 @@ struct ChapterAttributedTextTests {
         #expect(text.textStorage.string == content.text)
     }
 
+    // MARK: - Stacco tra paragrafi
+
+    /// Ordinata della linea di base del glifo del carattere `index`.
+    private func baseline(ofCharacter index: Int, in layoutManager: NSLayoutManager) -> CGFloat {
+        let glyph = layoutManager.glyphIndexForCharacter(at: index)
+        let fragment = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return fragment.minY + layoutManager.location(forGlyphAt: glyph).y
+    }
+
+    @Test("Tra due paragrafi c'e' circa mezza riga in piu', non una riga vuota", arguments: [15.0, 19.0, 26.0])
+    func paragraphGapIsHalfALine(fontSize: Double) throws {
+        // Paragrafi da 5 frasi da 14 parole: piu' righe ciascuno a 350 pt.
+        let content = SyntheticChapter.make(sentenceCount: 10)
+        let text = ChapterAttributedText(content: content, fontSize: CGFloat(fontSize), theme: .light)
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 350, height: CGFloat.greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+        text.textStorage.addLayoutManager(layoutManager)
+        layoutManager.ensureLayout(for: container)
+
+        // Passo tra due righe dello stesso paragrafo: inizio e fine della prima frase.
+        let first = try #require(content.characterRange(of: 0))
+        let lineStart = baseline(ofCharacter: first.location, in: layoutManager)
+        let secondLine = baseline(ofCharacter: NSMaxRange(first) - 1, in: layoutManager)
+        #expect(secondLine > lineStart, "la prima frase deve andare a capo")
+        // La prima frase potrebbe occupare piu' di due righe: il passo e' quello tra righe consecutive.
+        let lineFragment = layoutManager.lineFragmentRect(forGlyphAt: layoutManager.glyphIndexForCharacter(at: first.location),
+                                                          effectiveRange: nil)
+        let linePitch = lineFragment.height
+
+        // Ultimo carattere del paragrafo 0 (frase 4) e primo del paragrafo 1 (frase 5).
+        let endOfFirst = try #require(content.characterRange(of: 4))
+        let startOfSecond = try #require(content.characterRange(of: 5))
+        #expect(content.paragraphOfSentence[4] != content.paragraphOfSentence[5])
+        let pitchAcross = baseline(ofCharacter: startOfSecond.location, in: layoutManager)
+            - baseline(ofCharacter: NSMaxRange(endOfFirst) - 1, in: layoutManager)
+        let extraGap = pitchAcross - linePitch
+        print(String(format: "GAP ChapterAttributedText: corpo %.0f, passo riga %.2f pt, stacco extra %.2f pt (%.2f righe)",
+                     fontSize, linePitch, extraGap, extraGap / linePitch))
+        #expect(extraGap > linePitch * 0.4, "stacco \(extraGap) pt, riga \(linePitch) pt")
+        #expect(extraGap < linePitch * 0.6, "stacco \(extraGap) pt, riga \(linePitch) pt")
+        // Il testo resta quello dell'indice: tap ed evidenziazione usano gli stessi offset.
+        #expect(text.textStorage.string == content.text)
+    }
+
+    @Test("Lo stacco tra paragrafi resta mezza riga anche dopo un cambio di carattere")
+    func paragraphGapAfterStyleChange() throws {
+        let content = SyntheticChapter.make(sentenceCount: 10)
+        let text = ChapterAttributedText(content: content, fontSize: 18, theme: .light)
+        text.setStyle(fontSize: 24, theme: .dark)
+        let fresh = ChapterAttributedText(content: content, fontSize: 24, theme: .dark)
+        // Gli stessi attributi di un testo costruito da zero con il nuovo stile.
+        #expect(text.textStorage.isEqual(to: fresh.textStorage))
+    }
+
     // MARK: - Prestazioni
 
     private func milliseconds(_ duration: Duration) -> Double {
