@@ -26,7 +26,7 @@ Convenzioni: ogni task in un worktree e branch propri (`tNN-<tema>`), PR verso `
 
 ## Fase 2 — Lettore
 
-### [ ] T4: `PlayerEngine` (M)
+### [x] T4: `PlayerEngine` (M)
 **Descrizione.** `actor PlayerEngine` su `AVAudioPlayer`: `load(book:)`, `play()`, `pause()`, `seek(to: SentenceID)`, `seek(by: seconds)`, `rate`, passaggio automatico al capitolo successivo con precarica, `AsyncStream<PlaybackPosition>` a 10 Hz, `AVAudioSession` categoria `.playback`. Nessuna UI.
 **Accettazione.** Test con la fixture: seek a una frase → `currentTime` entro 50 ms dal suo `s`; fine capitolo 1 → inizia capitolo 2 senza intervento; `rate` 1.5 mantiene il pitch (`enableRate`).
 **Verifica.** Swift Testing (riproduzione reale su simulatore, timeout corti); `scripts/check.sh`.
