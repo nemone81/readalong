@@ -29,6 +29,10 @@ final class ReaderModel {
     private(set) var chapterTime: Double = 0
     /// Ultimo errore da mostrare all'utente, in italiano.
     var errorMessage: String?
+    /// Velocita' di lettura (T10), tra 0,8 e 2,0 a passi di 0,1.
+    private(set) var rate: Double = 1.0
+    /// Timer di spegnimento (T10): comanda volume e pausa del motore.
+    let sleepTimer: SleepTimer
 
     @ObservationIgnored private let reader: RABookReader
     @ObservationIgnored private let engine: PlayerEngine
@@ -47,6 +51,10 @@ final class ReaderModel {
         self.engine = engine
         self.coverData = reader.coverData()
         self.chapterNumber = book.chapters.first?.number ?? 1
+        self.sleepTimer = SleepTimer(
+            setVolume: { volume in await engine.setVolume(volume) },
+            pause: { await engine.pause() }
+        )
     }
 
     isolated deinit {
@@ -176,12 +184,43 @@ final class ReaderModel {
         return firstVisible
     }
 
+    // MARK: - Velocita' e timer (T10)
+
+    /// Imposta la velocita' (normalizzata con `normalizedRate`): la applica
+    /// subito al motore e la salva subito nello stato del libro.
+    func setRate(_ value: Double) async {
+        let normalized = Self.normalizedRate(value)
+        rate = normalized
+        await engine.setRate(Float(normalized))
+        progressStore?.update(for: book.id) { $0.rate = normalized }
+    }
+
+    /// Avvia il timer di spegnimento sulla posizione attuale.
+    func startSleepTimer(_ mode: SleepTimer.Mode) {
+        sleepTimer.handle(
+            PlaybackPosition(chapter: chapterNumber, seconds: chapterTime, sentence: currentSentence, isPlaying: isPlaying),
+            chapterDuration: chapterDuration,
+            rate: rate
+        )
+        sleepTimer.start(mode)
+    }
+
+    /// Velocita' ammesse dall'interfaccia (le stesse di `PlayerEngine.rateRange`).
+    nonisolated static let rateRange: ClosedRange<Double> = 0.8...2.0
+
+    /// La velocita' ammessa piu' vicina: tra 0,8 e 2,0, a passi di 0,1.
+    nonisolated static func normalizedRate(_ value: Double) -> Double {
+        guard value.isFinite else { return 1.0 }
+        return min(max((value * 10).rounded() / 10, rateRange.lowerBound), rateRange.upperBound)
+    }
+
     // MARK: - Posizioni dal motore
 
     /// Aggiorna lo stato da una posizione del motore; tocca le proprieta'
     /// osservate solo quando cambiano, per non ridisegnare a vuoto a 10 Hz.
     func apply(_ position: PlaybackPosition) {
         persist(position, wasPlaying: isPlaying)
+        sleepTimer.handle(position, chapterDuration: book.chapter(number: position.chapter)?.duration ?? 0, rate: rate)
         if position.chapter != chapterNumber || chapterContent == nil {
             loadChapter(position.chapter)
         }
@@ -225,6 +264,7 @@ final class ReaderModel {
     private func restoreSavedState() async {
         guard let saved = progressStore?.state(for: book.id) else { return }
         await engine.setRate(Float(saved.rate))
+        rate = Self.normalizedRate(saved.rate)
         try? await engine.seek(chapter: saved.position.chapter, seconds: saved.position.seconds)
     }
 
