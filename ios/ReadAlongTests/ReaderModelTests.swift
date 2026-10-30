@@ -51,7 +51,15 @@ struct ReaderModelTests {
 
         await model.play()
         try await waitUntil { model.isPlaying }
-        #expect(model.currentSentence == pausedAt)
+        // Non deve saltare alla frase in vista (20): resta attorno alla frase di
+        // pausa (una di tolleranza per lato: le posizioni arrivano a 10 Hz e la
+        // frase letta alla pausa puo' essere indietro di un tick sul motore).
+        let resumed = try #require(model.currentSentence)
+        #expect(resumed.chapter == pausedAt.chapter)
+        #expect(
+            abs(resumed.index - pausedAt.index) <= 1,
+            "ripreso da \(resumed) dopo pausa a \(pausedAt) (t=\(pausedTime), ora \(model.chapterTime))"
+        )
         #expect(model.chapterTime >= pausedTime - 0.05)
         #expect(model.chapterTime < pausedTime + 1)
         await model.stop()
