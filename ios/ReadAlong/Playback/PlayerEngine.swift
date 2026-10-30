@@ -56,6 +56,8 @@ actor PlayerEngine {
     private(set) var isPlaying = false
     /// Velocita' di riproduzione, in `rateRange`. Si cambia con `setRate(_:)`.
     private(set) var rate: Float = 1.0
+    /// Volume dell'audio, tra 0 e 1 (fade del timer di spegnimento, T10).
+    private(set) var volume: Float = 1.0
 
     init() {}
 
@@ -209,6 +211,14 @@ actor PlayerEngine {
         next?.player.rate = rate
     }
 
+    /// Imposta il volume (riportato tra 0 e 1), anche del capitolo
+    /// precaricato: un fade a cavallo di due capitoli resta continuo.
+    func setVolume(_ value: Float) {
+        volume = min(max(value, 0), 1)
+        current?.player.volume = volume
+        next?.player.volume = volume
+    }
+
     // MARK: - Capitoli
 
     /// Rende corrente il capitolo `chapterIndex` alla posizione `seconds`;
@@ -288,6 +298,7 @@ actor PlayerEngine {
         // `enableRate` va impostato prima di `prepareToPlay`.
         player.enableRate = true
         player.rate = rate
+        player.volume = volume
         player.delegate = playerDelegate()
         player.prepareToPlay()
         return ChapterPlayer(chapterIndex: chapterIndex, player: player, sentences: try sentenceIndex(at: chapterIndex))
