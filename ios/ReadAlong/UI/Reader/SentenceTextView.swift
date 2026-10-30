@@ -37,8 +37,13 @@ struct SentenceTextView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> ReaderTextView {
+        Self.makeTextView(coordinator: context.coordinator)
+    }
+
+    /// La `UITextView` configurata e collegata al coordinator (fuori da
+    /// `makeUIView` per poterla costruire nei test).
+    static func makeTextView(coordinator: Coordinator) -> ReaderTextView {
         let textView = ReaderTextView(usingTextLayoutManager: false)
-        let coordinator = context.coordinator
         textView.delegate = coordinator
         textView.isEditable = false
         textView.isSelectable = false
@@ -89,7 +94,15 @@ struct SentenceTextView: UIViewRepresentable {
             textView.indicatorStyle = view.theme.scrollIndicatorStyle
 
             if let chapterText, chapterText.content == view.content {
+                // Cambio di carattere: il testo va a capo in modo diverso e lo
+                // stesso `contentOffset` mostrerebbe un altro punto del capitolo.
+                // Si fissa un'ancora prima e la si rimette al suo posto dopo.
+                // Il solo cambio di tema non sposta niente.
+                let anchor = view.fontSize != chapterText.fontSize ? captureScrollAnchor() : nil
                 chapterText.setStyle(fontSize: view.fontSize, theme: view.theme)
+                if let anchor {
+                    restoreScrollAnchor(anchor)
+                }
                 if chapterText.highlight(sentence: view.currentSentence) {
                     scrollToCurrentSentenceIfAllowed(animated: true)
                 }
@@ -138,6 +151,73 @@ struct SentenceTextView: UIViewRepresentable {
             let rect = Self.rect(ofCharacterRange: range, in: textView)
             if let target = Self.autoscrollTarget(for: rect, in: textView) {
                 textView.setContentOffset(target, animated: animated)
+            }
+        }
+
+        // MARK: Posizione al cambio di carattere
+
+        /// Punto del testo da tenere fermo sullo schermo mentre il testo si
+        /// ridispone: un carattere e la sua distanza dal bordo alto visibile.
+        struct ScrollAnchor: Equatable {
+            /// Primo carattere del range da tenere in vista.
+            let range: NSRange
+            /// `minY` del range meno il bordo alto visibile, prima del cambio.
+            let offsetFromVisibleTop: CGFloat
+            /// L'ancora e' la frase in lettura: dopo il cambio deve essere
+            /// interamente visibile, non solo il suo inizio.
+            let isCurrentSentence: Bool
+        }
+
+        /// L'ancora: la frase evidenziata se almeno in parte visibile (in
+        /// riproduzione l'autoscroll la tiene in vista); altrimenti (in pausa,
+        /// dopo che l'utente ha scorso altrove) la riga in cima.
+        private func captureScrollAnchor() -> ScrollAnchor? {
+            guard let textView, let chapterText, textView.bounds.height > 0, textView.textStorage.length > 0 else {
+                return nil
+            }
+            let visible = Self.visibleRange(of: textView)
+            if let current = chapterText.highlightedSentence,
+               let range = chapterText.content.characterRange(of: current) {
+                let rect = Self.rect(ofCharacterRange: range, in: textView)
+                if rect.maxY > visible.lowerBound && rect.minY < visible.upperBound {
+                    return ScrollAnchor(
+                        range: range,
+                        offsetFromVisibleTop: rect.minY - visible.lowerBound,
+                        isCurrentSentence: true
+                    )
+                }
+            }
+            let top = CGPoint(x: textView.textContainerInset.left, y: visible.lowerBound)
+            guard let index = Self.firstVisibleCharacterIndex(atTop: top, in: textView) else { return nil }
+            let range = NSRange(location: index, length: 1)
+            let rect = Self.rect(ofCharacterRange: range, in: textView)
+            // La riga in cima puo' essere tagliata: dopo il cambio la si mostra intera.
+            return ScrollAnchor(
+                range: range,
+                offsetFromVisibleTop: max(rect.minY - visible.lowerBound, 0),
+                isCurrentSentence: false
+            )
+        }
+
+        private func restoreScrollAnchor(_ anchor: ScrollAnchor) {
+            guard let textView else { return }
+            // Layout completo fino all'ancora (il layout non contiguo altrimenti
+            // stimerebbe la posizione) e dimensione del contenuto aggiornata.
+            let length = textView.textStorage.length
+            textView.layoutManager.ensureLayout(
+                forCharacterRange: NSRange(location: 0, length: min(NSMaxRange(anchor.range), length))
+            )
+            textView.layoutIfNeeded()
+            let rect = Self.rect(ofCharacterRange: anchor.range, in: textView)
+            let target = Self.anchoredOffset(
+                anchorMinY: rect.minY,
+                offsetFromVisibleTop: anchor.offsetFromVisibleTop,
+                in: textView
+            )
+            textView.setContentOffset(target, animated: false)
+            if anchor.isCurrentSentence, let fix = Self.autoscrollTarget(for: rect, in: textView) {
+                // Col carattere piu' grande la frase puo' uscire dal fondo.
+                textView.setContentOffset(fix, animated: false)
             }
         }
 
@@ -271,6 +351,28 @@ struct SentenceTextView: UIViewRepresentable {
             let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
             let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textView.textContainer)
             return rect.offsetBy(dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
+        }
+
+        /// Bordo alto e basso dell'area visibile, in coordinate del contenuto.
+        static func visibleRange(of scrollView: UIScrollView) -> ClosedRange<CGFloat> {
+            let insets = scrollView.adjustedContentInset
+            let top = scrollView.contentOffset.y + insets.top
+            let height = max(scrollView.bounds.height - insets.top - insets.bottom, 0)
+            return top...(top + height)
+        }
+
+        /// Offset che rimette a `offsetFromVisibleTop` dal bordo alto visibile
+        /// un'ancora che ora sta a `anchorMinY`, nei limiti dello scorrimento.
+        static func anchoredOffset(
+            anchorMinY: CGFloat,
+            offsetFromVisibleTop: CGFloat,
+            in scrollView: UIScrollView
+        ) -> CGPoint {
+            let insets = scrollView.adjustedContentInset
+            let minOffset = -insets.top
+            let maxOffset = max(minOffset, scrollView.contentSize.height + insets.bottom - scrollView.bounds.height)
+            let desired = anchorMinY - offsetFromVisibleTop - insets.top
+            return CGPoint(x: scrollView.contentOffset.x, y: min(max(desired, minOffset), maxOffset))
         }
 
         /// Dove scorrere per mostrare `rect`, o `nil` se e' gia' a posto: una frase

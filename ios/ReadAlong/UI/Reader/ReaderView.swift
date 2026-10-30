@@ -6,8 +6,9 @@ import SwiftUI
 /// pulsanti alla barra con `.toolbar`).
 struct ReaderView: View {
     let model: ReaderModel
-    var fontSize: CGFloat = 19
-    var theme: ReadingTheme = .light
+    /// Carattere e tema (T12): globali e persistenti.
+    @State private var settings = ReadingSettings.shared
+    @State private var isShowingSettings = false
 
     var body: some View {
         Group {
@@ -15,8 +16,8 @@ struct ReaderView: View {
                 SentenceTextView(
                     content: content,
                     currentSentence: model.currentSentenceIndex,
-                    fontSize: fontSize,
-                    theme: theme,
+                    fontSize: settings.fontSize,
+                    theme: settings.theme,
                     onTapSentence: { index in
                         Task { await model.tapSentence(index) }
                     },
@@ -33,13 +34,24 @@ struct ReaderView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(theme.backgroundColor))
+        .background(Color(settings.theme.backgroundColor))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlayerBar(model: model)
         }
         .navigationTitle(model.chapter?.title ?? model.book.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .preferredColorScheme(settings.theme.colorScheme)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Impostazioni di lettura", systemImage: "textformat.size") {
+                    isShowingSettings = true
+                }
+            }
+        }
+        .sheet(isPresented: $isShowingSettings) {
+            ReadingSettingsSheet(settings: settings)
+        }
         .alert(
             "Errore",
             isPresented: Binding(
