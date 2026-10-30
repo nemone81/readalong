@@ -9,7 +9,19 @@ ROOT="${0:A:h:h}"
 cd "$ROOT"
 
 LOG_DIR="$(mktemp -d -t readalong-check)"
-trap 'rm -rf "$LOG_DIR"' EXIT
+SIM_ID=""
+
+# Pulizia all'uscita, anche in caso di errore o interruzione: il simulatore
+# dedicato si spegne e si cancella, i log temporanei pure.
+cleanup() {
+    if [[ -n "$SIM_ID" ]]; then
+        xcrun simctl shutdown "$SIM_ID" >/dev/null 2>&1 || true
+        xcrun simctl delete "$SIM_ID" >/dev/null 2>&1 || true
+    fi
+    rm -rf "$LOG_DIR"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 fail() {
     local step="$1" log="$2"
@@ -21,36 +33,50 @@ fail() {
     exit 1
 }
 
-# --- Simulatore: "iPhone 17" se c'e', altrimenti il primo iPhone disponibile,
-# sempre con runtime iOS >= 26 (il deployment target). A parita' di nome vince
-# il runtime piu' recente.
-pick_simulator() {
-    xcrun simctl list devices available | awk '
-        /^-- iOS / { split($3, v, "."); ok = (v[1] + 0 >= 26); next }
-        /^-- /     { ok = 0; next }
-        ok && /^ +iPhone / {
-            line = $0
-            sub(/^ +/, "", line)
-            name = line; sub(/ \([0-9A-F-]+\).*$/, "", name)
-            match(line, /\([0-9A-F-]{36}\)/)
-            udid = substr(line, RSTART + 1, RLENGTH - 2)
-            if (name == "iPhone 17") preferred = udid "\t" name
-            if (first == "") first = udid "\t" name
+# --- Simulatore dedicato: "ReadAlong-<branch>", iPhone 17, creato qui e
+# cancellato alla fine (anche se qualcosa fallisce). Due check.sh in parallelo
+# (worktree diversi) non si contendono piu' lo stesso simulatore.
+DEVICE_TYPE="com.apple.CoreSimulator.SimDeviceType.iPhone-17"
+
+# Runtime: il piu' recente iOS 26.x; se non ce n'e', il piu' recente >= 26
+# (il deployment target).
+pick_runtime() {
+    xcrun simctl list runtimes available | awk '
+        /^iOS / {
+            split($2, v, ".")
+            if (v[1] + 0 < 26) next
+            id = $NF
+            key = sprintf("%03d%03d%03d", v[1], v[2], v[3])
+            if (v[1] + 0 == 26 && key > best26) { best26 = key; id26 = id }
+            if (key > bestAny) { bestAny = key; idAny = id }
         }
-        END {
-            if (preferred != "") print preferred
-            else if (first != "") print first
+        END { print (id26 != "" ? id26 : idAny) }'
+}
+
+# UDID dei simulatori con esattamente questo nome (avanzi di run interrotte).
+devices_named() {
+    xcrun simctl list devices | awk -v name="$1" '
+        {
+            line = $0; sub(/^ +/, "", line)
+            n = line; sub(/ \([0-9A-F-]{36}\).*$/, "", n)
+            if (n == name && match(line, /\([0-9A-F-]{36}\)/)) print substr(line, RSTART + 1, RLENGTH - 2)
         }'
 }
 
-SIM="$(pick_simulator)"
-if [[ -z "$SIM" ]]; then
-    print -u2 "FALLITO: nessun simulatore iPhone con iOS >= 26 disponibile"
+RUNTIME="$(pick_runtime)"
+if [[ -z "$RUNTIME" ]]; then
+    print -u2 "FALLITO: nessun runtime iOS >= 26 installato"
     exit 1
 fi
-SIM_ID="${SIM%%$'\t'*}"
-SIM_NAME="${SIM#*$'\t'}"
-print "Simulatore: $SIM_NAME ($SIM_ID)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || print detached)"
+SIM_NAME="ReadAlong-${BRANCH//[^A-Za-z0-9._-]/-}"
+for stale in $(devices_named "$SIM_NAME"); do
+    xcrun simctl delete "$stale" >/dev/null 2>&1 || true
+done
+
+SIM_ID="$(xcrun simctl create "$SIM_NAME" "$DEVICE_TYPE" "$RUNTIME" 2>"$LOG_DIR/simctl.log")" \
+    || fail "creazione del simulatore ($DEVICE_TYPE, $RUNTIME)" "$LOG_DIR/simctl.log"
+print "Simulatore: $SIM_NAME (${RUNTIME##*.}, $SIM_ID)"
 
 # --- xcodegen
 print -n "xcodegen... "
