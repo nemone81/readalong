@@ -10,6 +10,8 @@ __pycache__/
 .pytest_cache/
 # Libri e audio: mai in git
 *.rabook
+# ...tranne i pacchetti di prova minuscoli dei test iOS
+!ios/ReadAlongTests/Fixtures/*.rabook
 *.m4a
 *.m4b
 *.wav

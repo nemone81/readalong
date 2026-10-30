@@ -77,7 +77,13 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
-      - ReadAlongTests
+      - path: ReadAlongTests
+        excludes:
+          - Fixtures/**
+      # Pacchetti di prova: copiati come cartella "Fixtures" nel bundle dei test.
+      - path: ReadAlongTests/Fixtures
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: ReadAlong
     settings:
