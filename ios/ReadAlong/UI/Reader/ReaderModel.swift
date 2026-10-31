@@ -9,6 +9,27 @@ import Observation
 /// Regola di ripresa (spec, decisione del 2026-10-30): se in pausa l'utente ha
 /// trascinato il testo e in cima allo schermo c'e' una frase diversa da quella
 /// corrente, `play()` riparte da quella. Vedi `resumeTarget(...)`.
+/// La proposta di saltare alla posizione arrivata da un altro dispositivo
+/// (T13): "Riprendi da dove eri arrivato su iPad? (Capitolo 3, 12:40)".
+struct RemotePositionProposal: Equatable, Sendable {
+    let position: BookState.Position
+    /// Il titolo del capitolo, se il libro lo conosce.
+    let chapterTitle: String?
+    /// Il tipo di dispositivo ("iPad"), `nil` se ignoto.
+    let deviceName: String?
+
+    /// La domanda da mostrare.
+    var message: String {
+        let place = deviceName.map { "su \($0)" } ?? "sull'altro dispositivo"
+        return "Riprendi da dove eri arrivato \(place)? (\(locationLabel))"
+    }
+
+    /// "Capitolo 3, 12:40".
+    var locationLabel: String {
+        "Capitolo \(position.chapter), \(PlayerBar.format(position.seconds))"
+    }
+}
+
 @MainActor @Observable
 final class ReaderModel {
     /// Salto dei pulsanti indietro/avanti, in secondi.
@@ -35,6 +56,9 @@ final class ReaderModel {
     let sleepTimer: SleepTimer
     /// Segnalibri del libro (T14), in ordine di creazione; li carica `attach`.
     private(set) var bookmarks: [Bookmark] = []
+    /// Posizione piu' recente arrivata da un altro dispositivo mentre il
+    /// lettore era in pausa (T13): la UI chiede se riprendere da li'.
+    private(set) var pendingRemotePosition: RemotePositionProposal?
     /// Testo dei capitoli letti per le anteprime dei segnalibri.
     @ObservationIgnored private var previewChapters: [Int: SentenceIndex] = [:]
 
@@ -52,6 +76,8 @@ final class ReaderModel {
     @ObservationIgnored private var nowPlaying: NowPlayingController?
     @ObservationIgnored private var audioSession: AudioSessionController?
     @ObservationIgnored private var nowPlayingTask: Task<Void, Never>?
+    /// Ascolta i cambiamenti di stato venuti da altri dispositivi (T13).
+    @ObservationIgnored private var externalTask: Task<Void, Never>?
 
     init(book: Book, reader: RABookReader, engine: PlayerEngine = PlayerEngine()) {
         self.book = book
@@ -68,6 +94,7 @@ final class ReaderModel {
     isolated deinit {
         positionsTask?.cancel()
         nowPlayingTask?.cancel()
+        externalTask?.cancel()
     }
 
     // MARK: - Stato derivato
@@ -109,9 +136,15 @@ final class ReaderModel {
     func stop() async {
         positionsTask?.cancel()
         positionsTask = nil
+        externalTask?.cancel()
+        externalTask = nil
         stopSystemPlayback()
         await engine.pause()
-        await saveCurrentPosition()
+        // Con una proposta in sospeso lo stato salvato e' gia' quello (piu'
+        // recente) dell'altro dispositivo: chiudere non deve scavalcarlo.
+        if pendingRemotePosition == nil {
+            await saveCurrentPosition()
+        }
     }
 
     // MARK: - Azioni
@@ -124,6 +157,7 @@ final class ReaderModel {
             userScrolledWhilePaused: userScrolledWhilePaused
         )
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         await perform {
             if let target {
                 try await engine.seek(to: target)
@@ -147,6 +181,7 @@ final class ReaderModel {
     /// Sposta l'audio di `seconds` (negativo = indietro), attraversando i capitoli.
     func skip(by seconds: TimeInterval) async {
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         await perform { try await engine.seek(by: seconds) }
     }
 
@@ -154,6 +189,7 @@ final class ReaderModel {
     /// (spec, storia 3), anche se era in pausa.
     func tapSentence(_ index: Int) async {
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         let id = SentenceID(chapter: chapterNumber, index: index)
         await perform {
             try await engine.seek(to: id)
@@ -164,6 +200,7 @@ final class ReaderModel {
     /// Va all'inizio del capitolo `number`; se stava suonando continua.
     func goToChapter(_ number: Int) async {
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         await perform { try await engine.skipToChapter(number) }
     }
 
@@ -269,6 +306,15 @@ final class ReaderModel {
     func attach(_ store: ProgressStore) {
         progressStore = store
         bookmarks = store.state(for: book.id)?.bookmarks ?? []
+        let changes = store.externalChanges()
+        let bookID = book.id
+        externalTask?.cancel()
+        externalTask = Task { [weak self] in
+            for await change in changes where change.bookID == bookID {
+                guard let self else { return }
+                self.handleExternalChange(change)
+            }
+        }
     }
 
     /// Riporta il motore (appena caricato, in pausa) a posizione e velocita'
@@ -278,6 +324,55 @@ final class ReaderModel {
         await engine.setRate(Float(saved.rate))
         rate = Self.normalizedRate(saved.rate)
         try? await engine.seek(chapter: saved.position.chapter, seconds: saved.position.seconds)
+    }
+
+    // MARK: - Stato da un altro dispositivo (T13)
+
+    /// Lo stato del libro e' cambiato per un merge con un altro dispositivo:
+    /// i segnalibri si ricaricano sempre; la posizione remota si propone solo
+    /// in pausa. In riproduzione si ignora: la prossima posizione del motore
+    /// e' piu' recente e torna a vincere.
+    func handleExternalChange(_ change: ProgressStore.ExternalChange) {
+        if bookmarks != change.state.bookmarks {
+            bookmarks = change.state.bookmarks
+        }
+        guard let remote = change.remotePosition, !isPlaying else { return }
+        let current = BookState.Position(chapter: chapterNumber, sentence: currentSentence?.index, seconds: chapterTime)
+        guard !remote.isSamePlace(as: current) else {
+            pendingRemotePosition = nil
+            return
+        }
+        pendingRemotePosition = RemotePositionProposal(
+            position: remote,
+            chapterTitle: book.chapter(number: remote.chapter)?.title,
+            deviceName: change.remoteDevice
+        )
+        let remoteRate = Self.normalizedRate(change.state.rate)
+        if remoteRate != rate {
+            rate = remoteRate
+            Task { await engine.setRate(Float(remoteRate)) }
+        }
+    }
+
+    /// "Riprendi": porta l'audio (in pausa) alla posizione dell'altro dispositivo.
+    func acceptRemotePosition() async {
+        guard let proposal = pendingRemotePosition else { return }
+        pendingRemotePosition = nil
+        userScrolledWhilePaused = false
+        await perform {
+            try await engine.seek(chapter: proposal.position.chapter, seconds: proposal.position.seconds)
+        }
+    }
+
+    /// "Ignora": resta qui, e questa posizione torna la piu' recente (anche
+    /// per l'altro dispositivo).
+    func ignoreRemotePosition() {
+        guard pendingRemotePosition != nil else { return }
+        pendingRemotePosition = nil
+        guard let progressStore else { return }
+        let current = BookState.Position(chapter: chapterNumber, sentence: currentSentence?.index, seconds: chapterTime)
+        progressStore.updatePosition(current, for: book.id)
+        progressStore.flush()
     }
 
     /// Passa la posizione allo store (con debounce); alla pausa salva subito.
@@ -323,17 +418,27 @@ extension ReaderModel {
 
     /// Cambia la nota di un segnalibro (vuota = nessuna nota).
     func updateBookmark(_ bookmark: Bookmark, note: String?) {
-        changeBookmarks { $0.updateNote(of: bookmark.id, to: note) }
+        let now = Bookmark.storedDate(Date())
+        changeBookmarks { $0.updateNote(of: bookmark.id, to: note, modifiedAt: now) }
     }
 
+    /// Toglie il segnalibro lasciando un tombstone, cosi' la cancellazione
+    /// arriva anche agli altri dispositivi (T13).
     func removeBookmark(_ bookmark: Bookmark) {
-        changeBookmarks { $0.removeBookmark(id: bookmark.id) }
+        guard let progressStore else {
+            bookmarks.removeBookmark(id: bookmark.id)
+            return
+        }
+        let now = Bookmark.storedDate(Date())
+        progressStore.update(for: book.id) { $0.removeBookmark(id: bookmark.id, deletedAt: now) }
+        bookmarks = progressStore.state(for: book.id)?.bookmarks ?? []
     }
 
     /// Porta l'audio all'inizio della frase del segnalibro, cambiando capitolo
     /// se serve; se stava suonando continua.
     func jump(to bookmark: Bookmark) async {
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         await perform { try await engine.seek(to: bookmark.sentence) }
     }
 
@@ -440,6 +545,7 @@ extension ReaderModel {
     /// Scrub dal lock screen: secondo `seconds` del capitolo in corso.
     func seekInChapter(to seconds: TimeInterval) async {
         userScrolledWhilePaused = false
+        pendingRemotePosition = nil
         await perform { try await engine.seek(chapter: chapterNumber, seconds: seconds) }
     }
 }

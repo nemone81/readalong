@@ -19,6 +19,17 @@ struct ReaderView: View {
         Set(model.bookmarks.lazy.filter { $0.sentence.chapter == chapter }.map(\.sentence.index))
     }
 
+    /// La proposta di riprendere dalla posizione dell'altro dispositivo (T13).
+    @ViewBuilder private var remoteBanner: some View {
+        if let proposal = model.pendingRemotePosition {
+            RemotePositionBanner(
+                proposal: proposal,
+                onResume: { Task { await model.acceptRemotePosition() } },
+                onIgnore: { model.ignoreRemotePosition() }
+            )
+        }
+    }
+
     var body: some View {
         Group {
             if let content = model.chapterContent {
@@ -48,6 +59,7 @@ struct ReaderView: View {
             }
         }
         .background(Color(settings.theme.backgroundColor))
+        .safeAreaInset(edge: .top, spacing: 0) { remoteBanner }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             PlayerBar(model: model, background: Color(settings.theme.backgroundColor))
         }
@@ -98,5 +110,45 @@ struct ReaderView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+}
+
+/// La barra "Riprendi da dove eri arrivato sull'altro dispositivo?" (T13),
+/// in cima al lettore: non copre il testo e non interrompe nulla.
+private struct RemotePositionBanner: View {
+    let proposal: RemotePositionProposal
+    var onResume: () -> Void
+    var onIgnore: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(proposal.message)
+                        .font(.subheadline.weight(.semibold))
+                    if let title = proposal.chapterTitle {
+                        Text(title)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            } icon: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+            }
+            HStack {
+                Spacer()
+                Button("Ignora", action: onIgnore)
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("remote.ignore")
+                Button("Riprendi", action: onResume)
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("remote.resume")
+            }
+        }
+        .padding(14)
+        .background(.regularMaterial, in: .rect(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
     }
 }

@@ -146,7 +146,7 @@ struct PlayerBar: View {
     }
 
     /// `m:ss`, oppure `h:mm:ss` oltre l'ora.
-    static func format(_ seconds: Double) -> String {
+    nonisolated static func format(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "0:00" }
         let total = Int(seconds.rounded(.down))
         let hours = total / 3600

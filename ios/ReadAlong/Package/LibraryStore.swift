@@ -103,6 +103,10 @@ final class LibraryStore {
         didSet { defaults.set(lastOpenedBookID, forKey: Self.lastOpenedKey) }
     }
 
+    /// Chiamato dopo la cancellazione di un libro, con il suo id: l'app ci
+    /// aggancia `ProgressStore.removeState(for:)` (stato locale, non remoto).
+    @ObservationIgnored var onDelete: ((String) -> Void)?
+
     @ObservationIgnored let importer: RABookImporter
     @ObservationIgnored private let defaults: UserDefaults
     /// Identifica l'import in corso: gli aggiornamenti di progresso arrivati
@@ -188,7 +192,7 @@ final class LibraryStore {
         return LibraryImportResult(item: item, wasAlreadyInLibrary: wasPresent.contains(book.id))
     }
 
-    /// Cancella il libro dal disco e dal catalogo.
+    /// Cancella il libro dal disco e dal catalogo, poi chiama `onDelete`.
     func delete(_ id: String) throws(LibraryError) {
         guard let item = item(id: id) else { throw .notFound(id) }
         do {
@@ -200,6 +204,7 @@ final class LibraryStore {
         if lastOpenedBookID == id {
             lastOpenedBookID = nil
         }
+        onDelete?(id)
     }
 
     // MARK: - Interni

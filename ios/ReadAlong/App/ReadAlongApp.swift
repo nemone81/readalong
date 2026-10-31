@@ -1,11 +1,24 @@
 import SwiftUI
+import UIKit
 
 @main
 struct ReadAlongApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var library = LibraryStore.standard()
-    /// Posizione, velocita' e segnalibri dei libri (T7).
-    @State private var progressStore = ProgressStore()
+    @State private var library: Result<LibraryStore, LibraryError>
+    /// Posizione, velocita' e segnalibri dei libri (T7), sincronizzati via
+    /// iCloud key-value store (T13).
+    @State private var progressStore: ProgressStore
+
+    init() {
+        let progressStore = ProgressStore(sync: CloudKeyValueStore(), deviceName: UIDevice.current.model)
+        let library = LibraryStore.standard()
+        if case .success(let store) = library {
+            // Cancellare un libro cancella il suo stato locale, non quello su iCloud.
+            store.onDelete = { progressStore.removeState(for: $0) }
+        }
+        _library = State(initialValue: library)
+        _progressStore = State(initialValue: progressStore)
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -20,9 +33,12 @@ struct ReadAlongApp: App {
                 )
             }
         }
-        .onChange(of: scenePhase) { _, phase in
-            // In background (o verso la chiusura) si salva subito.
-            if phase != .active {
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active {
+                // All'avvio e al ritorno in primo piano: merge con gli altri dispositivi.
+                Task { await progressStore.startSync() }
+            } else {
+                // In background (o verso la chiusura) si salva subito.
                 progressStore.flush()
             }
         }
@@ -53,6 +69,8 @@ struct RootView: View {
                 library: library,
                 progressProvider: { bookID in
                     // Avanzamento dal `BookState` salvato (T7) e dalle durate dei capitoli (T11).
+                    // Leggere la revisione fa ridisegnare la libreria dopo un merge (T13).
+                    _ = progressStore.externalRevision
                     guard let state = progressStore.state(for: bookID),
                           let item = library.item(id: bookID) else { return nil }
                     return bookProgress(
