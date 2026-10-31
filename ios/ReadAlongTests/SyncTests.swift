@@ -24,9 +24,13 @@ struct SyncTests {
         backend: SyncMemoryBackend = SyncMemoryBackend(),
         device: String = "iPhone",
         debounce: Duration = .milliseconds(200),
+        remoteWriteInterval: Duration = ProgressStore.remoteWriteInterval,
         now: @escaping () -> Date = { Date() }
     ) -> ProgressStore {
-        ProgressStore(backend: backend, sync: sync, deviceName: device, debounce: debounce, now: now)
+        ProgressStore(
+            backend: backend, sync: sync, deviceName: device,
+            debounce: debounce, remoteWriteInterval: remoteWriteInterval, now: now
+        )
     }
 
     // MARK: - ProgressStore
@@ -47,6 +51,67 @@ struct SyncTests {
         #expect(remote.position == position(1, 5))
         #expect(remote.device == "iPhone")
         #expect(remote == store.state(for: bookID))
+    }
+
+    @Test("Finestra delle scritture remote: 30 s di default")
+    func remoteWriteIntervalDefault() {
+        #expect(ProgressStore.remoteWriteInterval == .seconds(30))
+    }
+
+    @Test("In riproduzione due salvataggi ravvicinati = una sola scrittura remota; la pausa (flush) scrive subito", .timeLimit(.minutes(1)))
+    func throttlesRemoteWritesWhilePlaying() async throws {
+        let sync = InMemorySyncStore()
+        let backend = SyncMemoryBackend()
+        let store = makeStore(sync: sync, backend: backend, debounce: .milliseconds(50))
+        await store.startSync()
+
+        store.updatePosition(position(1, 1), for: bookID)
+        try await waitUntil { backend.states[bookID]?.position == self.position(1, 1) }
+        await store.syncIdle()
+        #expect(sync.writeCount == 1)
+
+        // Secondo salvataggio locale col debounce: dentro la finestra, niente scrittura remota.
+        store.updatePosition(position(1, 2), for: bookID)
+        try await waitUntil { backend.states[bookID]?.position == self.position(1, 2) }
+        await store.syncIdle()
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(sync.writeCount == 1)
+        #expect(try sync.remoteState(for: bookID)?.position == position(1, 1))
+
+        // Pausa: flush scrive subito, anche senza modifiche nuove in attesa.
+        store.flush()
+        await store.syncIdle()
+        #expect(sync.writeCount == 2)
+        #expect(try sync.remoteState(for: bookID)?.position == position(1, 2))
+    }
+
+    @Test("Cambio di capitolo: scrittura remota senza aspettare la finestra", .timeLimit(.minutes(1)))
+    func chapterChangeWritesImmediately() async throws {
+        let sync = InMemorySyncStore()
+        let backend = SyncMemoryBackend()
+        let store = makeStore(sync: sync, backend: backend, debounce: .milliseconds(50))
+        await store.startSync()
+        store.updatePosition(position(1, 170), for: bookID)
+        try await waitUntil { sync.writeCount == 1 }
+        store.updatePosition(position(2, 0.5), for: bookID)
+        try await waitUntil { sync.writeCount == 2 }
+        await store.syncIdle()
+        #expect(try sync.remoteState(for: bookID)?.position == position(2, 0.5))
+    }
+
+    @Test("Finestra scaduta: la posizione rimasta indietro si scrive da sola", .timeLimit(.minutes(1)))
+    func deferredRemoteWrite() async throws {
+        let sync = InMemorySyncStore()
+        let store = makeStore(sync: sync, debounce: .milliseconds(50), remoteWriteInterval: .milliseconds(400))
+        await store.startSync()
+        store.updatePosition(position(1, 1), for: bookID)
+        try await waitUntil { sync.writeCount == 1 }
+        store.updatePosition(position(1, 2), for: bookID)
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(sync.writeCount == 1)
+        try await waitUntil { sync.writeCount == 2 }
+        await store.syncIdle()
+        #expect(try sync.remoteState(for: bookID)?.position == position(1, 2))
     }
 
     @Test("Cambiamento esterno piu' recente: merge nel locale, notifica, nessuna riscrittura remota", .timeLimit(.minutes(1)))

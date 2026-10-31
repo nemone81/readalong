@@ -106,6 +106,12 @@ struct FileStateBackend: StateBackend {
 ///   parte che differisce dal risultato (locale, remoto, o nessuna). Il merge
 ///   e' deterministico, quindi due dispositivi convergono e non rimbalzano.
 ///   Le riconciliazioni passano una alla volta, in ordine.
+/// - Scritture remote limitate: il salvataggio col debounce (la riproduzione)
+///   scrive sul `SyncStore` al massimo una volta ogni `remoteWriteInterval`
+///   (30 s) per libro; cio' che resta indietro parte alla fine della finestra.
+///   `flush()` (pausa, background, chiusura), `update` e il cambio di
+///   capitolo scrivono subito. iCloud KVS strozza le scritture frequenti:
+///   10 ore di ascolto a una ogni 2 s sarebbero 18.000 scritture.
 /// - Se il merge cambia lo stato locale, `externalChanges()` lo notifica (il
 ///   lettore propone la posizione, ricarica i segnalibri) e `externalRevision`
 ///   cresce (la libreria ridisegna l'avanzamento).
@@ -124,6 +130,9 @@ final class ProgressStore {
     }
 
     static let defaultDebounce: Duration = .seconds(2)
+    /// Finestra minima tra due scritture remote dello stesso libro durante
+    /// la riproduzione.
+    static let remoteWriteInterval: Duration = .seconds(30)
 
     @ObservationIgnored let backend: any StateBackend
     @ObservationIgnored let sync: (any SyncStore)?
@@ -147,6 +156,16 @@ final class ProgressStore {
     /// Libri con modifiche non ancora salvate.
     @ObservationIgnored private var dirty: Set<String> = []
     @ObservationIgnored private var pendingSave: Task<Void, Never>?
+    @ObservationIgnored private let remoteInterval: Duration
+    /// Libri salvati in locale ma non ancora scritti sul `SyncStore`.
+    @ObservationIgnored private var remotePending: Set<String> = []
+    /// Libri da scrivere sul `SyncStore` al prossimo salvataggio senza
+    /// aspettare la finestra (cambio di capitolo).
+    @ObservationIgnored private var remoteUrgent: Set<String> = []
+    /// Ultima scrittura remota avviata, per libro.
+    @ObservationIgnored private var lastRemoteWrite: [String: ContinuousClock.Instant] = [:]
+    /// Scritture remote rimandate alla fine della finestra, per libro.
+    @ObservationIgnored private var deferredRemote: [String: Task<Void, Never>] = [:]
     /// L'ultima riconciliazione in coda: le successive la aspettano.
     @ObservationIgnored private var syncQueue: Task<Void, Never>?
     @ObservationIgnored private var listenTask: Task<Void, Never>?
@@ -157,18 +176,23 @@ final class ProgressStore {
         sync: (any SyncStore)? = nil,
         deviceName: String? = nil,
         debounce: Duration = ProgressStore.defaultDebounce,
+        remoteWriteInterval: Duration = ProgressStore.remoteWriteInterval,
         now: @escaping () -> Date = { Date() }
     ) {
         self.backend = backend
         self.sync = sync
         self.deviceName = deviceName
         self.debounce = debounce
+        self.remoteInterval = remoteWriteInterval
         self.now = now
     }
 
     isolated deinit {
         listenTask?.cancel()
         pendingSave?.cancel()
+        for task in deferredRemote.values {
+            task.cancel()
+        }
         for continuation in observers.values {
             continuation.finish()
         }
@@ -194,8 +218,12 @@ final class ProgressStore {
     /// salvataggio. Se e' lo stesso punto gia' salvato non cambia nulla
     /// (neanche `updatedAt`, che decide il merge tra dispositivi).
     func updatePosition(_ position: BookState.Position, for bookID: String) {
-        if let current = state(for: bookID)?.position, current.isSamePlace(as: position) {
+        let current = state(for: bookID)?.position
+        if let current, current.isSamePlace(as: position) {
             return
+        }
+        if let current, current.chapter != position.chapter {
+            remoteUrgent.insert(bookID)
         }
         modify(bookID) { $0.position = position }
         scheduleSave()
@@ -207,21 +235,11 @@ final class ProgressStore {
         flush()
     }
 
-    /// Salva subito tutto cio' che e' in attesa e lo manda al `SyncStore`.
+    /// Salva subito tutto cio' che e' in attesa e lo manda subito al
+    /// `SyncStore`, anche cio' che la finestra delle scritture remote aveva
+    /// rimandato.
     func flush() {
-        pendingSave?.cancel()
-        pendingSave = nil
-        for bookID in dirty.sorted() {
-            guard let state = states[bookID] else { continue }
-            do {
-                try backend.save(state, bookID: bookID)
-                onSaved?(bookID, state)
-                enqueueReconcile(bookID)
-            } catch {
-                lastError = error
-            }
-        }
-        dirty.removeAll()
+        save(throttled: false)
     }
 
     /// Dimentica lo stato del libro, in memoria e nel backend locale. Il
@@ -230,6 +248,9 @@ final class ProgressStore {
     func removeState(for bookID: String) {
         states[bookID] = nil
         dirty.remove(bookID)
+        remotePending.remove(bookID)
+        remoteUrgent.remove(bookID)
+        deferredRemote.removeValue(forKey: bookID)?.cancel()
         loaded.insert(bookID)
         do {
             try backend.remove(bookID: bookID)
@@ -390,7 +411,56 @@ final class ProgressStore {
         pendingSave = Task { [weak self, debounce] in
             try? await Task.sleep(for: debounce)
             guard !Task.isCancelled else { return }
-            self?.flush()
+            self?.save(throttled: true)
+        }
+    }
+
+    /// Salva in locale i libri modificati; poi scrive sul `SyncStore` subito
+    /// (`throttled == false`, cambio di capitolo, finestra scaduta) o alla
+    /// fine della finestra.
+    private func save(throttled: Bool) {
+        pendingSave?.cancel()
+        pendingSave = nil
+        for bookID in dirty.sorted() {
+            guard let state = states[bookID] else { continue }
+            do {
+                try backend.save(state, bookID: bookID)
+                onSaved?(bookID, state)
+                remotePending.insert(bookID)
+            } catch {
+                lastError = error
+            }
+        }
+        dirty.removeAll()
+        for bookID in remotePending.sorted() {
+            if !throttled || remoteUrgent.contains(bookID) {
+                writeRemote(bookID)
+            } else if let last = lastRemoteWrite[bookID], ContinuousClock.now - last < remoteInterval {
+                deferRemote(bookID, until: last + remoteInterval)
+            } else {
+                writeRemote(bookID)
+            }
+        }
+    }
+
+    private func writeRemote(_ bookID: String) {
+        deferredRemote.removeValue(forKey: bookID)?.cancel()
+        remotePending.remove(bookID)
+        remoteUrgent.remove(bookID)
+        guard sync != nil else { return }
+        lastRemoteWrite[bookID] = .now
+        enqueueReconcile(bookID)
+    }
+
+    private func deferRemote(_ bookID: String, until deadline: ContinuousClock.Instant) {
+        guard deferredRemote[bookID] == nil else { return }
+        deferredRemote[bookID] = Task { [weak self] in
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            guard !Task.isCancelled, let self else { return }
+            self.deferredRemote[bookID] = nil
+            if self.remotePending.contains(bookID) {
+                self.writeRemote(bookID)
+            }
         }
     }
 }
