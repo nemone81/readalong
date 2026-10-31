@@ -56,17 +56,20 @@ struct ProgressStoreTests {
         #expect(local.merged(with: remote) == local)
     }
 
-    @Test("Merge: remoto piu' recente vince; a parita' vince il locale")
+    @Test("Merge: remoto piu' recente vince; a parita' di data un confronto fisso, uguale dai due lati")
     func mergeRemoteNewer() {
         let local = BookState(position: position(1, 1, 3), updatedAt: date(100))
         let remote = BookState(position: position(2, 5, 40), rate: 1.5, updatedAt: date(200))
         #expect(local.merged(with: remote) == remote)
 
+        // A parita' di data vince la posizione piu' avanti, da entrambe le
+        // parti: niente rimbalzi tra due record con la stessa data.
         let tie = BookState(position: position(9, 9, 9), updatedAt: date(100))
-        #expect(local.merged(with: tie) == local)
+        #expect(local.merged(with: tie) == tie)
+        #expect(tie.merged(with: local) == tie)
     }
 
-    @Test("Merge: segnalibri disgiunti uniti, ordinati per data; sullo stesso id vince il record piu' recente")
+    @Test("Merge: segnalibri disgiunti uniti, ordinati per data; sullo stesso id vince la versione modificata dopo")
     func mergeBookmarks() {
         let shared = UUID()
         let a = bookmark(1, at: 10)
@@ -78,7 +81,11 @@ struct ProgressStoreTests {
         )
         let remote = BookState(
             position: position(1, 4, 9),
-            bookmarks: [a, bookmark(5, at: 20, id: shared, note: "nuova")],
+            bookmarks: [a, {
+                var edited = bookmark(5, at: 20, id: shared, note: "nuova")
+                edited.modifiedAt = date(150)
+                return edited
+            }()],
             updatedAt: date(200)
         )
         let merged = local.merged(with: remote)
@@ -333,5 +340,9 @@ private final class MemoryBackend: StateBackend {
 
     func remove(bookID: String) throws(ProgressStoreError) {
         states[bookID] = nil
+    }
+
+    func bookIDs() -> [String] {
+        states.keys.sorted()
     }
 }

@@ -14,7 +14,7 @@ extension Bookmark {
     /// riletto dal file e' identico a quello in memoria (un `Date()` qualsiasi,
     /// convertito al 1970 e ritorno, puo' cambiare nell'ultimo bit).
     static func storedDate(_ date: Date) -> Date {
-        Date(timeIntervalSince1970: (date.timeIntervalSince1970 * 1000).rounded() / 1000)
+        BookState.storedDate(date)
     }
 
     /// La nota come va salvata: senza spazi ai bordi, `nil` se vuota.
@@ -43,23 +43,30 @@ extension [Bookmark] {
     }
 
     /// Mette un segnalibro su `sentence`. Se la frase ne ha gia' uno, non ne
-    /// crea un secondo: ne aggiorna la nota.
+    /// crea un secondo: ne aggiorna la nota (e `modifiedAt` = `createdAt`,
+    /// che qui e' l'istante dell'operazione).
     mutating func setBookmark(at sentence: SentenceID, note: String?, id: UUID = UUID(), createdAt: Date) {
         let note = Bookmark.normalizedNote(note)
         if let index = firstIndex(where: { $0.sentence == sentence }) {
             self[index].note = note
+            self[index].modifiedAt = createdAt
         } else {
             append(Bookmark(id: id, sentence: sentence, note: note, createdAt: createdAt))
         }
     }
 
-    /// Cambia la nota del segnalibro `id` (vuota = nessuna nota).
-    mutating func updateNote(of id: UUID, to note: String?) {
+    /// Cambia la nota del segnalibro `id` (vuota = nessuna nota) e ne segna
+    /// l'istante: tra due versioni dello stesso segnalibro vince la piu'
+    /// recente (T13).
+    mutating func updateNote(of id: UUID, to note: String?, modifiedAt: Date = Bookmark.storedDate(Date())) {
         guard let index = firstIndex(where: { $0.id == id }) else { return }
         self[index].note = Bookmark.normalizedNote(note)
+        self[index].modifiedAt = modifiedAt
     }
 
-    /// Toglie il segnalibro `id`.
+    /// Toglie il segnalibro `id` senza tombstone: per una cancellazione che
+    /// deve propagarsi agli altri dispositivi usare
+    /// `BookState.removeBookmark(id:deletedAt:)`.
     mutating func removeBookmark(id: UUID) {
         removeAll { $0.id == id }
     }
