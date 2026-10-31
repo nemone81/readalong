@@ -60,6 +60,25 @@ struct ReadingSettingsTests {
         let settings = ReadingSettings(defaults: temp.defaults)
         #expect(settings.fontSize == 19)
         #expect(settings.theme == .light)
+        #expect(!settings.isPlayerMinimized)
+    }
+
+    @Test("Controlli ridotti: la scelta resta dopo un riavvio, e si torna indietro")
+    func playerMinimizedPersistence() throws {
+        let temp = try TemporaryDefaults()
+        let settings = ReadingSettings(defaults: temp.defaults)
+        settings.isPlayerMinimized = true
+        #expect(ReadingSettings(defaults: temp.defaults).isPlayerMinimized)
+
+        settings.isPlayerMinimized = false
+        #expect(!ReadingSettings(defaults: temp.defaults).isPlayerMinimized)
+    }
+
+    @Test("Controlli ridotti: un valore salvato non booleano vale barra completa")
+    func playerMinimizedInvalidStoredValue() throws {
+        let temp = try TemporaryDefaults()
+        temp.defaults.set("forse", forKey: ReadingSettings.Keys.playerMinimized)
+        #expect(!ReadingSettings(defaults: temp.defaults).isPlayerMinimized)
     }
 
     @Test("Le impostazioni sopravvivono a una nuova istanza (riavvio)")

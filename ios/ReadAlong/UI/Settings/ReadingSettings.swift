@@ -2,7 +2,8 @@ import Foundation
 import Observation
 
 /// Impostazioni di lettura globali (non per libro): dimensione del carattere a
-/// cinque passi e tema. Persistenti in `UserDefaults`.
+/// cinque passi, tema e controlli di riproduzione ridotti a pillola (T17).
+/// Persistenti in `UserDefaults`.
 ///
 /// Classe `@Observable` con `UserDefaults` iniettato invece di `@AppStorage`:
 /// - una sola sorgente di verita' (`shared`) letta dal lettore e dal foglio
@@ -16,6 +17,7 @@ final class ReadingSettings {
     enum Keys {
         static let fontStep = "reading.fontStep"
         static let theme = "reading.theme"
+        static let playerMinimized = "reading.playerMinimized"
     }
 
     /// Dimensioni del carattere, in punti, dal passo 0 al 4.
@@ -44,6 +46,12 @@ final class ReadingSettings {
         didSet { defaults.set(theme.rawValue, forKey: Keys.theme) }
     }
 
+    /// Controlli di riproduzione ridotti a una pillola, per quando si vuole
+    /// solo leggere (T17). Predefinito: barra completa.
+    var isPlayerMinimized: Bool {
+        didSet { defaults.set(isPlayerMinimized, forKey: Keys.playerMinimized) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // `object(forKey:)`: distingue "mai salvato" da un passo 0 salvato.
@@ -54,6 +62,7 @@ final class ReadingSettings {
             fontStep = Self.defaultFontStep
         }
         theme = defaults.string(forKey: Keys.theme).flatMap(ReadingTheme.init(rawValue:)) ?? .light
+        isPlayerMinimized = defaults.bool(forKey: Keys.playerMinimized)
     }
 
     var fontSize: CGFloat { Self.fontSize(forStep: fontStep) }
