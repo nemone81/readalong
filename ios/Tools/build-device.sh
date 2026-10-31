@@ -35,7 +35,7 @@ DERIVED="${DERIVED_DATA:-build/device}"
 mkdir -p build
 xcodegen generate --quiet
 xcodebuild -project ReadAlong.xcodeproj -scheme ReadAlong \
-  -destination 'generic/platform=iOS' \
+  -destination "id=$UDID" \
   -derivedDataPath "$DERIVED" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
   -authenticationKeyPath "$KEY_PATH" \
