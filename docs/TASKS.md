@@ -100,13 +100,14 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 
 ## Fase 4 — Sync ed extra
 
-### [ ] T13: Sincronizzazione iCloud (M)
+### [x] T13: Sincronizzazione iCloud (M) — 2026-10-31 (da integrare)
 **Descrizione.** `ProgressStore` specchia ogni `BookState` su `NSUbiquitousKeyValueStore` (chiave `book.<id>`), ascolta `didChangeExternallyNotification`, applica il merge (vince `updatedAt` più recente; segnalibri uniti per id, cancellazioni come tombstone). Il lettore, se riceve una posizione più recente mentre è in pausa, propone "Riprendi da iPad?" invece di saltare da solo.
 **Accettazione.** Test di merge (locale più nuovo, remoto più nuovo, segnalibri disgiunti, tombstone); su due dispositivi la posizione arriva entro 60 s.
 **Verifica.** Swift Testing con un `KeyValueStore` finto; collaudo iPhone+iPad; `scripts/check.sh`.
 **Dipendenze.** T7. **File.** `ios/ReadAlong/Sync/ProgressStore.swift`, `CloudKeyValueStore.swift`, `StateMerge.swift`, `ios/ReadAlongTests/StateMergeTests.swift`.
+**Note.** Sync dietro il protocollo `SyncStore` (ADR 0002), implementato da `CloudKeyValueStore`; nei test `InMemorySyncStore` con più "dispositivi" su un cloud condiviso. Chiave `book.<id>` accorciata a 64 byte (limite KVS, gli id sono sha256 da 64 caratteri): l'id completo sta nel valore. `BookState` ha campi nuovi facoltativi (`deletedBookmarks`, `device`, `Bookmark.modifiedAt`), il formato precedente si legge e si riscrive identico. Merge in `StateMerge` (deterministico: a parità di `updatedAt` vince la posizione più avanti, non più "il locale", che avrebbe fatto rimbalzare due record con la stessa data). `ProgressStore` riconcilia dopo ogni salvataggio, all'avvio, al ritorno in primo piano e a ogni cambiamento esterno, una riconciliazione alla volta; notifica `externalChanges()` e `externalRevision` (libreria). `ReaderModel.pendingRemotePosition` + barra "Riprendi / Ignora" in `ReaderView`; segnalibri ricaricati al merge. `LibraryStore.onDelete` → `removeState` (il remoto resta). Da fare nel collaudo T15: due dispositivi veri (la firma con l'entitlement KVS richiede la PLA accettata), tempo di propagazione entro 60 s.
 
-### [x] T14: Segnalibri (M) — integrato 2026-10-30 (sync tra dispositivi con T13)
+### [x] T14: Segnalibri (M) — integrato 2026-10-30
 **Descrizione.** Pressione lunga su una frase → segnalibro (con nota opzionale); lista per libro con anteprima della frase e salto; cancellazione; salvati nel `BookState` e sincronizzati tramite T13.
 **Accettazione.** Creazione, lista, salto, cancellazione; dopo sync il segnalibro compare sull'altro dispositivo.
 **Verifica.** Test su aggiunta/rimozione/merge; collaudo manuale; `scripts/check.sh`.

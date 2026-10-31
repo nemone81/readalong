@@ -56,7 +56,7 @@ audio/01.m4a         → AAC 64 kbps mono, un file per capitolo
 | Audio | `AVAudioPlayer` (`enableRate` per la velocità), `AVAudioSession` playback in background, `MPRemoteCommandCenter` + `MPNowPlayingInfoCenter` |
 | Testo | `UITextView` via `UIViewRepresentable` con `NSAttributedString` (evidenziazione per range, tap → `characterIndex` → frase). SwiftUI puro non dà il tap per frase dentro un paragrafo |
 | Persistenza locale | Stato per libro (`BookState`) in `Application Support/State/<bookId>.json`, separato dai file del libro; libri importati copiati in `Application Support/Books/<bookId>/` |
-| Sync | `NSUbiquitousKeyValueStore` (limite 1 MB: posizione, velocità, segnalibri per libro). Regola di merge: vince il record con `updatedAt` più recente |
+| Sync | `NSUbiquitousKeyValueStore` dietro il protocollo `SyncStore` (ADR 0002; limite 1 MB: posizione, velocità, segnalibri per libro). Merge in `StateMerge`: vedi sotto, "Sincronizzazione" |
 | Generatore | `tools/makebook` in Python 3.12 (`uv`), Piper + espeak-ng, ffmpeg; riusa gli script già scritti (`estrai_capitoli.py`, `piper_tts.py`, `piper_tts_timed.py`) |
 
 Convenzioni allineate a `~/Projects/battlefits-ios` (XcodeGen, Swift 6, script in `Tools/`).
@@ -95,6 +95,25 @@ tools/makebook/makebook/      → extract.py, synth.py, package.py, cli.py
 tools/makebook/tests/
 scripts/check.sh
 ```
+
+## Sincronizzazione (T13)
+
+Un documento per libro, il JSON compatto di `BookState` (chiavi ordinate, date in secondi dal 1970, nessuno spazio):
+
+```
+{"bookmarks":[{"createdAt":…,"id":"…","modifiedAt":…,"note":"…","sentence":{"chapter":2,"index":4}}],
+ "deletedBookmarks":[{"deletedAt":…,"id":"…"}], "device":"iPad",
+ "position":{"chapter":2,"seconds":31.25,"sentence":7}, "rate":1.3, "updatedAt":…}
+```
+
+`modifiedAt`, `deletedBookmarks` e `device` (aggiunti con T13) sono facoltativi e si scrivono solo se presenti: un record senza è identico al formato di T7 e T14, e si legge con i default.
+
+Regola di merge (`StateMerge.merge(local:remote:)`, pura e deterministica, così due dispositivi convergono senza rimbalzi):
+- posizione, velocità e dispositivo dal record con `updatedAt` più recente; a parità di data vince la posizione più avanti nel libro (poi velocità e dispositivo), uguale dai due lati;
+- segnalibri uniti per id; per ogni id vince la versione modificata più di recente (`modifiedAt`, altrimenti `createdAt`);
+- cancellazioni come tombstone (`deletedBookmarks`): il tombstone toglie il segnalibro con lo stesso id se questo non è stato modificato dopo; i tombstone più vecchi di 90 giorni rispetto a `updatedAt` si potano (un dispositivo spento più a lungo può far ricomparire un segnalibro cancellato).
+
+Quando il merge si fa: dopo ogni salvataggio locale (quindi dopo il debounce di 2 s, non a ogni tick), all'avvio e al ritorno in primo piano, e a ogni cambiamento esterno. Si riscrive solo la parte che differisce dal risultato. Se in pausa arriva una posizione più recente, il lettore non salta: propone «Riprendi da dove eri arrivato su iPad? (Capitolo 3, 12:40)» con Riprendi / Ignora (Ignora rende di nuovo più recente la posizione locale). In riproduzione la posizione locale continua a vincere. Cancellare un libro cancella il suo stato locale, non il documento remoto.
 
 ## Stile del codice
 
