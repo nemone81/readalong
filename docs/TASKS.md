@@ -120,6 +120,9 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 **Verifica.** Checklist compilata; `scripts/check.sh`.
 **Dipendenze.** tutto. **File.** `ios/Tools/testflight.sh`, `docs/COLLAUDO.md`, `README.md`.
 
+### [x] T16: Icona app e spaziatura griglia libreria (S) — 2026-10-31
+**Note.** Icona da un solo PNG 1024 in `Resources/Assets.xcassets` (`ASSETCATALOG_COMPILER_APPICON_NAME`); le copertine attaccate erano colpa di `CoverImage` (immagine 3:4 `scaledToFill` in un frame `maxWidth: .infinity` che allargava la cella), ora in overlay su `Color.clear`; colonne da `LibraryGridMetrics` (20 pt tra celle e bordi, 2 colonne su iPhone, 4+ su iPad), testata in `LibraryGridMetricsTests`.
+
 ### Checkpoint C
 - [ ] Criteri di successo 1–10 della spec verificati
 - [ ] Approvazione finale di Fabio
