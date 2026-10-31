@@ -25,7 +25,7 @@ ReadAlong unisce i due: un solo "libro-pacchetto" con testo, audio e mappa dei t
 7. Segnalibri su una frase, con nota opzionale; lista e salto.
 8. Lock screen, Control Center e AirPods: play/pausa, ±15 s, capitolo precedente/successivo; copertina e titolo visibili.
 9. Indice dei capitoli con durata e avanzamento.
-10. Regolazioni di lettura minime: dimensione del carattere, tema chiaro/scuro/sepia.
+10. Regolazioni di lettura minime: dimensione del carattere, tema chiaro/scuro/sepia, controlli di riproduzione riducibili a una pillola (play/pausa e tempo) per chi vuole solo leggere; scelte globali e persistenti.
 
 ### Fuori ambito (v1)
 

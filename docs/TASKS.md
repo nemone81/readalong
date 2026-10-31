@@ -124,6 +124,9 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 ### [x] T16: Icona app e spaziatura griglia libreria (S) — 2026-10-31
 **Note.** Icona da un solo PNG 1024 in `Resources/Assets.xcassets` (`ASSETCATALOG_COMPILER_APPICON_NAME`); le copertine attaccate erano colpa di `CoverImage` (immagine 3:4 `scaledToFill` in un frame `maxWidth: .infinity` che allargava la cella), ora in overlay su `Color.clear`; colonne da `LibraryGridMetrics` (20 pt tra celle e bordi, 2 colonne su iPhone, 4+ su iPad), testata in `LibraryGridMetricsTests`.
 
+### [x] T17: Controlli di riproduzione riducibili a pillola (S) — 2026-10-31 (da integrare)
+**Note.** `ReadingSettings.isPlayerMinimized` (chiave `reading.playerMinimized`, default barra completa, globale e persistente). `PlayerBar` mostra la barra completa con chevron "Riduci i controlli" (`player.minimize`) o una pillola a destra con play/pausa, `player.elapsed` e chevron "Mostra i controlli" (`player.expand`); tocco sulla pillola e swipe giù/su (`PlayerBarSwipe`, testato) cambiano stato con animazione `.snappy`. Il testo sta sotto la fascia (trasparente ai lati della pillola, tocchi inclusi); al cambio di inset il bordo alto resta fermo e, riaprendo la barra, la frase in lettura se era in vista torna sopra la barra (`insetChangeTarget`, testato). Screenshot dei due stati sul simulatore.
+
 ### Checkpoint C
 - [ ] Criteri di successo 1–10 della spec verificati
 - [ ] Approvazione finale di Fabio
