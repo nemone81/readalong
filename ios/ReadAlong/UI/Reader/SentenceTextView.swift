@@ -56,6 +56,7 @@ struct SentenceTextView: UIViewRepresentable {
         textView.layoutManager.allowsNonContiguousLayout = true
         textView.adjustsFontForContentSizeCategory = false
         textView.onLayout = { [weak coordinator] in coordinator?.textViewDidLayout() }
+        textView.onAdjustedContentInsetChange = { [weak coordinator] in coordinator?.adjustedContentInsetDidChange() }
 
         let tap = UITapGestureRecognizer(target: coordinator, action: #selector(Coordinator.handleTap(_:)))
         let longPress = UILongPressGestureRecognizer(
@@ -98,6 +99,9 @@ struct SentenceTextView: UIViewRepresentable {
         /// posizione: si ricalcolano solo quando cambia, non a ogni scroll.
         private var bookmarkMarkers: [UIImageView] = []
         private var markersKey: MarkersKey?
+        /// Inset in basso dell'ultimo layout: cambia quando la barra di
+        /// riproduzione si riduce a pillola o si riapre (T17).
+        private var lastBottomInset: CGFloat?
 
         func update(with view: SentenceTextView) {
             parent = view
@@ -229,6 +233,49 @@ struct SentenceTextView: UIViewRepresentable {
             if let target = Self.autoscrollTarget(for: rect, in: textView) {
                 textView.setContentOffset(target, animated: animated)
             }
+        }
+
+        // MARK: Barra di riproduzione ridotta o riaperta (T17)
+
+        /// L'inset in basso cambia con l'altezza della barra. Il bordo alto
+        /// resta fermo, quindi riducendola il testo guadagna righe in fondo
+        /// senza spostarsi; riaprendola la barra puo' coprire la frase in
+        /// lettura, che allora si riporta in vista (anche se l'utente ha appena
+        /// scorso: il gesto sulla barra e' suo).
+        func adjustedContentInsetDidChange() {
+            guard let textView else { return }
+            let newBottom = textView.adjustedContentInset.bottom
+            let oldBottom = lastBottomInset
+            lastBottomInset = newBottom
+            guard let oldBottom, oldBottom != newBottom, textView.bounds.height > 0 else { return }
+            let previouslyVisible = Self.visibleRange(of: textView, bottomInset: oldBottom)
+            // Fuori dal layout in corso: uno `setContentOffset` dentro il
+            // `layoutSubviews` della text view verrebbe annullato.
+            Task { @MainActor [weak self] in
+                guard
+                    let self, let textView = self.textView,
+                    let chapterText = self.chapterText, let current = chapterText.highlightedSentence,
+                    let range = chapterText.content.characterRange(of: current)
+                else { return }
+                let rect = Self.rect(ofCharacterRange: range, in: textView)
+                if let target = Self.insetChangeTarget(for: rect, previouslyVisible: previouslyVisible, in: textView) {
+                    textView.setContentOffset(target, animated: true)
+                }
+            }
+        }
+
+        /// Dove scorrere dopo un cambio di inset (logica pura): solo se la frase
+        /// era in vista prima e ora non lo e' piu' del tutto; una frase gia'
+        /// fuori schermo (l'utente leggeva altrove) non trascina il testo.
+        static func insetChangeTarget(
+            for rect: CGRect,
+            previouslyVisible: ClosedRange<CGFloat>,
+            in scrollView: UIScrollView
+        ) -> CGPoint? {
+            guard rect.maxY > previouslyVisible.lowerBound, rect.minY < previouslyVisible.upperBound else {
+                return nil
+            }
+            return autoscrollTarget(for: rect, in: scrollView)
         }
 
         // MARK: Posizione al cambio di carattere
@@ -448,6 +495,15 @@ struct SentenceTextView: UIViewRepresentable {
             return top...(top + height)
         }
 
+        /// Come `visibleRange(of:)`, ma con un altro inset in basso: l'area che
+        /// si vedeva prima che la barra cambiasse altezza.
+        static func visibleRange(of scrollView: UIScrollView, bottomInset: CGFloat) -> ClosedRange<CGFloat> {
+            let insets = scrollView.adjustedContentInset
+            let top = scrollView.contentOffset.y + insets.top
+            let height = max(scrollView.bounds.height - insets.top - bottomInset, 0)
+            return top...(top + height)
+        }
+
         /// Offset che rimette a `offsetFromVisibleTop` dal bordo alto visibile
         /// un'ancora che ora sta a `anchorMinY`, nei limiti dello scorrimento.
         static func anchoredOffset(
@@ -492,10 +548,17 @@ struct SentenceTextView: UIViewRepresentable {
 /// iniziale quando la vista ha finalmente una dimensione.
 final class ReaderTextView: UITextView {
     var onLayout: (@MainActor () -> Void)?
+    /// Avvisa quando cambia l'inset (barra di riproduzione ridotta o riaperta).
+    var onAdjustedContentInsetChange: (@MainActor () -> Void)?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayout?()
+    }
+
+    override func adjustedContentInsetDidChange() {
+        super.adjustedContentInsetDidChange()
+        onAdjustedContentInsetChange?()
     }
 }
 

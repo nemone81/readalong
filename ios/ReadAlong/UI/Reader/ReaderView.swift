@@ -61,7 +61,14 @@ struct ReaderView: View {
         .background(Color(settings.theme.backgroundColor))
         .safeAreaInset(edge: .top, spacing: 0) { remoteBanner }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            PlayerBar(model: model, background: Color(settings.theme.backgroundColor))
+            PlayerBar(
+                model: model,
+                background: Color(settings.theme.backgroundColor),
+                isMinimized: settings.isPlayerMinimized,
+                onMinimizedChange: { minimized in
+                    withAnimation(.snappy) { settings.isPlayerMinimized = minimized }
+                }
+            )
         }
         .navigationTitle(model.chapter?.title ?? model.book.title)
         .navigationBarTitleDisplayMode(.inline)

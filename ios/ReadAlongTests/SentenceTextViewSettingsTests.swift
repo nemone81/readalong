@@ -94,4 +94,54 @@ struct SentenceTextViewSettingsTests {
         scrollView.contentOffset = CGPoint(x: 0, y: 200)
         #expect(Coordinator.visibleRange(of: scrollView) == 250...600)
     }
+
+    // MARK: - Barra ridotta o riaperta (T17)
+
+    /// Scroll view 500 pt, contenuto lungo, offset 1000, inset in basso `bottom`.
+    private func scrollView(bottomInset bottom: CGFloat) -> UIScrollView {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 300, height: 500))
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.contentInset = UIEdgeInsets(top: 0, left: 0, bottom: bottom, right: 0)
+        scrollView.contentSize = CGSize(width: 300, height: 8000)
+        scrollView.contentOffset = CGPoint(x: 0, y: 1000)
+        return scrollView
+    }
+
+    @Test("Area visibile con un altro inset in basso: il bordo alto non cambia")
+    func visibleRangeWithOtherBottomInset() {
+        let scrollView = scrollView(bottomInset: 220)
+        #expect(Coordinator.visibleRange(of: scrollView) == 1000...1280)
+        #expect(Coordinator.visibleRange(of: scrollView, bottomInset: 60) == 1000...1440)
+    }
+
+    @Test("Barra riaperta sopra la frase in lettura: la frase torna in vista")
+    func expandedBarCoveringSentenceScrolls() throws {
+        // Pillola (inset 60): frase a 1350-1420, in vista. Barra completa (220): coperta.
+        let scrollView = scrollView(bottomInset: 220)
+        let rect = CGRect(x: 20, y: 1350, width: 260, height: 70)
+        let before = Coordinator.visibleRange(of: scrollView, bottomInset: 60)
+        let target = try #require(Coordinator.insetChangeTarget(for: rect, previouslyVisible: before, in: scrollView))
+        scrollView.contentOffset = target
+        let after = Coordinator.visibleRange(of: scrollView)
+        #expect(rect.minY >= after.lowerBound && rect.maxY <= after.upperBound)
+    }
+
+    @Test("Barra ridotta o frase ancora visibile: nessuno scroll")
+    func insetChangeWithoutCoverageDoesNotScroll() {
+        let collapsed = scrollView(bottomInset: 60)
+        let rect = CGRect(x: 20, y: 1100, width: 260, height: 70)
+        let before = Coordinator.visibleRange(of: collapsed, bottomInset: 220)
+        #expect(Coordinator.insetChangeTarget(for: rect, previouslyVisible: before, in: collapsed) == nil)
+
+        let expanded = scrollView(bottomInset: 220)
+        #expect(Coordinator.insetChangeTarget(for: rect, previouslyVisible: before, in: expanded) == nil)
+    }
+
+    @Test("Frase fuori schermo prima del cambio (si leggeva altrove): il testo non si sposta")
+    func offscreenSentenceIsLeftAlone() {
+        let scrollView = scrollView(bottomInset: 220)
+        let rect = CGRect(x: 20, y: 5000, width: 260, height: 70)
+        let before = Coordinator.visibleRange(of: scrollView, bottomInset: 60)
+        #expect(Coordinator.insetChangeTarget(for: rect, previouslyVisible: before, in: scrollView) == nil)
+    }
 }
