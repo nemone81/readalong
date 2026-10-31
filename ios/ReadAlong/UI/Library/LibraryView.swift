@@ -15,7 +15,17 @@ struct LibraryView: View {
     @State private var pendingDeletion: LibraryItem?
     @State private var deletionError: LibraryError?
 
-    private let columns = [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: 20, alignment: .top)]
+    /// Larghezza della griglia, letta dalla vista: le colonne le calcola
+    /// `LibraryGridMetrics`. Con `.adaptive(minimum:maximum:)` SwiftUI non
+    /// garantiva lo spazio tra le copertine.
+    @State private var gridWidth: CGFloat = 0
+
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: LibraryGridMetrics.spacing, alignment: .top),
+            count: LibraryGridMetrics.columnCount(forWidth: gridWidth)
+        )
+    }
 
     var body: some View {
         Group {
@@ -87,8 +97,9 @@ struct LibraryView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(LibraryGridMetrics.spacing)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
     }
 
     private func delete(_ item: LibraryItem) {
@@ -154,17 +165,21 @@ private struct CoverImage: View {
     @State private var image: UIImage?
 
     var body: some View {
-        ZStack {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                placeholder
+        // La forma la decide chi usa la vista (2:3 nella griglia); l'immagine
+        // la riempie in overlay. Messa direttamente nello ZStack con
+        // `scaledToFill`, una copertina piu' larga di 2:3 (es. 3:4) allargava
+        // la cella oltre la colonna: copertine attaccate tra loro e ai bordi.
+        Color.clear
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    placeholder
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+            .clipped()
         .task(id: url) {
             guard let url else { return }
             image = await Self.thumbnail(at: url)
