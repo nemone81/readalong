@@ -2,6 +2,7 @@
 # Build di sviluppo firmata e installazione sull'iPhone collegato (checkpoint B).
 #
 #   ios/Tools/build-device.sh [UDID]
+#   ENTITLEMENTS=build/NoCloud.entitlements ios/Tools/build-device.sh   # finche' il PLA non e' accettato
 #
 # Firma automatica tramite la chiave API di App Store Connect (stessa di
 # BattleFits): registra il dispositivo e aggiorna l'App ID (iCloud KVS) da
@@ -40,6 +41,7 @@ xcodebuild -project ReadAlong.xcodeproj -scheme ReadAlong \
   -authenticationKeyPath "$KEY_PATH" \
   -authenticationKeyID "$KEY_ID" \
   -authenticationKeyIssuerID "$ISSUER_ID" \
+  ${ENTITLEMENTS:+CODE_SIGN_ENTITLEMENTS="$ENTITLEMENTS"} \
   build > build/device.log 2>&1 || { grep -E "error:" build/device.log | sort -u | head -20; exit 1; }
 
 APP="$DERIVED/Build/Products/Debug-iphoneos/ReadAlong.app"
