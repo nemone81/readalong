@@ -132,6 +132,8 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 **Accettazione.** `makebook --epub` produce lo stesso file byte per byte da stesso input; il partial MD5 coincide con quello calcolato da KOReader sul file copiato sul Kindle; posizione letta sul Kindle → proposta su iPhone entro 60 s dall'apertura, e viceversa la posizione dell'iPhone riapre il Kindle sulla stessa pagina.
 **Verifica.** pytest (EPUB, partial MD5 con vettori noti); Swift Testing (parser/serializzatore XPointer, client con URLProtocol finto, aggancio allo store); collaudo su Kindle vero; `scripts/check.sh`.
 **Dipendenze.** T13. **File.** `tools/makebook/src/makebook/epub.py`, `ios/ReadAlong/Sync/KOSync*.swift`, `ios/ReadAlong/UI/Settings/KindleSettingsView.swift`, `docs/adr/0003-kindle-kosync.md`.
+**Note.**
+- [x] T18a — 2026-11-01 (da integrare): `tools/makebook/makebook/epub.py` (non `src/`), `makebook --epub PATH` e `makebook kindle-id PATH`; `kindle.documento` facoltativo in `book.json` (spec «Formato del libro»), `versioneFormato` resta 1, `id` invariato con o senza EPUB (testato). Nav e copertina solo nel manifest: crengine (`epubfmt.cpp`) crea un `DocFragment` anche per gli itemref `linear="no"`. Test in `tests/test_epub.py` (partial MD5 su vettori costruiti a mano, struttura OPF/XHTML, determinismo, testo identico alla fixture). Il Cigno nero si rigenera dalla `--work-dir` in ~15 s senza risintetizzare.
 
 ### Checkpoint C
 - [ ] Criteri di successo 1–10 della spec verificati

@@ -40,13 +40,15 @@ ReadAlong unisce i due: un solo "libro-pacchetto" con testo, audio e mappa dei t
 Uno zip con estensione propria (UTI `it.fabiocrestoni.rabook`, conforme a `public.zip-archive`), registrato dall'app per "Apri in…" e per l'importazione dai File.
 
 ```
-book.json            → {id, titolo, autore, lingua, voce, versioneFormato: 1, capitoli: [{n, titolo, file, durata}]}
+book.json            → {id, titolo, autore, lingua, voce, versioneFormato: 1, capitoli: [{n, titolo, file, durata}], kindle?: {documento}}
 cover.jpg
 chapters/01.json     → {durata, paragrafi: [[{t: "testo frase", s: 12.345, e: 15.010}, …], …]}
 audio/01.m4a         → AAC 64 kbps mono, un file per capitolo
 ```
 
 `id` è stabile (sha256 di titolo+autore+testo) ed è la chiave di posizione e segnalibri su iCloud. Il formato è versionato: l'app rifiuta versioni maggiori di quella che conosce con un messaggio chiaro.
+
+`kindle` è **facoltativo** (T18): c'è solo se il libro è stato generato con `makebook --epub`, e `kindle.documento` è il partial MD5 alla KOReader dell'EPUB per il Kindle (stringa esadecimale minuscola di 32 caratteri), cioè l'identità del documento su KOSync. Non entra nell'`id` e non cambia `versioneFormato`, che resta 1: un'app che non lo conosce lo ignora.
 
 ## Stack tecnico
 

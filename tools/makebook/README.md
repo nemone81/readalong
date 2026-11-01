@@ -66,6 +66,7 @@ Opzioni utili:
 | `--pdf-mode`, `--no-pdf-mode` | automatico | forza accesa o spenta la ricucitura delle righe dei PDF (vedi sotto) |
 | `--jobs` | 4 | capitoli sintetizzati in parallelo (un processo Piper ciascuno) |
 | `--work-dir` | temporanea | tiene audio e tempi dei capitoli: se la generazione si interrompe e la rilanci con la stessa cartella, i capitoli già fatti non si rifanno |
+| `--epub PATH` | no | scrive anche l'EPUB per il Kindle (vedi sotto) e mette in `book.json` il suo `kindle.documento` |
 
 La sintesi va più o meno in tempo reale per processo (un'ora di audio ≈ un'ora di CPU per capitolo): un libro lungo richiede qualche ora con `--jobs 4`. Conviene `--work-dir` dedicata.
 
@@ -86,6 +87,24 @@ Se hai già l'EPUB fatto da calibre a partire dal PDF, puoi passare direttamente
 
 Quando succede lo dice su stderr. `--no-pdf-mode` la spegne, `--pdf-mode` la forza anche su EPUB che non hanno quelle tracce. Senza la modalità PDF ogni riga del PDF diventerebbe un paragrafo e le frasi verrebbero spezzate a metà.
 
+## EPUB per il Kindle (KOReader + KOSync)
+
+Con `--epub PATH` makebook scrive, accanto al `.rabook`, un EPUB 3 da copiare sul Kindle (KOReader). KOReader sincronizza la posizione via KOSync identificando il libro con il *partial MD5* del file: makebook lo calcola sull'EPUB appena scritto e lo mette in `book.json` come `kindle.documento`, così l'app sa a quale documento KOSync corrisponde il libro. Per questo l'EPUB va sempre da makebook e mai da calibre, e non va modificato dopo (cambierebbe l'MD5).
+
+- Spine = esattamente i capitoli, nell'ordine di `capitoli`: per crengine `DocFragment[N]` è il capitolo N. Indice (`nav.xhtml`) e copertina stanno solo nel manifest, perché crengine crea un `DocFragment` per ogni voce dello spine, anche con `linear="no"`.
+- Ogni capitolo: `<h2>` col titolo, poi un `<p>` per paragrafo con il testo delle frasi unite da uno spazio, identico a `chapters/NN.json` (`<p>[M]` = paragrafo M, contando da 1). Nient'altro nel `body`.
+- Deterministico: date fisse nello zip, `dcterms:modified` fisso, nessuna dipendenza dall'orologio. Stesso input, stesso file, stesso `kindle.documento`.
+- L'`id` del libro non cambia chiedendo l'EPUB.
+- Conviene `--language it` sui PDF: calibre spesso dichiara `en`, e KOReader userebbe la sillabazione inglese.
+
+Per confrontare l'MD5 con quello che calcola KOReader sul Kindle:
+
+```sh
+uv run --project tools/makebook makebook kindle-id libro-kindle.epub
+```
+
+Se la `--work-dir` della prima generazione c'è ancora, aggiungere l'EPUB a un libro già fatto non risintetizza nulla: basta rilanciare lo stesso comando con `--epub` (qualche secondo, più la conversione del PDF).
+
 ## Cosa fa con il testo
 
 - Segue l'indice dell'EPUB (`toc.ncx`, oppure il `nav` di EPUB 3). Le voci con meno di 40 parole (intestazioni di Parte) confluiscono nel capitolo dopo.
@@ -100,7 +119,7 @@ Quando succede lo dice su stderr. `--no-pdf-mode` la spegne, `--pdf-mode` la for
 Uno zip con tutte le voci *stored* (mai compresse: l'app legge lo zip senza `inflate`), data delle voci fissa, quindi due generazioni identiche danno lo stesso file:
 
 ```
-book.json          {id, titolo, autore, lingua, voce, versioneFormato: 1, capitoli: [{n, titolo, file, durata}]}
+book.json          {id, titolo, autore, lingua, voce, versioneFormato: 1, capitoli: [{n, titolo, file, durata}], kindle?: {documento}}
 cover.jpg          copertina dell'EPUB (lato max 1400 px), o tinta unita se manca
 chapters/NN.json   {durata, paragrafi: [[{t, s, e}, …], …]}
 audio/NN.m4a       AAC 64 kbps mono
@@ -108,6 +127,7 @@ audio/NN.m4a       AAC 64 kbps mono
 
 - `id`: sha256 di `titolo + "\n" + autore + "\n" + testo`, dove il testo è l'insieme delle frasi (unite da spazio), dei paragrafi (riga vuota) e dei capitoli (due righe vuote).
 - `file`: path del JSON del capitolo nello zip (`chapters/01.json`); l'audio ha lo stesso numero.
+- `kindle.documento` (facoltativo, solo con `--epub`): partial MD5 alla KOReader dell'EPUB per il Kindle, 32 caratteri esadecimali minuscoli. È l'identità del documento per KOSync. `versioneFormato` resta 1: chi non lo conosce lo ignora.
 - `s`, `e`, `durata`: secondi, troncati al millesimo. Contati sui campioni prodotti da Piper, quindi esatti; la fine di una frase coincide con l'inizio della successiva.
 
 Alla fine `makebook` rilegge il pacchetto e lo valida (`package.validate_rabook`).
