@@ -115,6 +115,24 @@ Regola di merge (`StateMerge.merge(local:remote:)`, pura e deterministica, così
 
 Quando il merge si fa: dopo i salvataggi locali (il salvataggio locale resta col debounce di 2 s; la scrittura remota avviene subito su pausa, background, chiusura, modifiche di velocità o segnalibri e cambio di capitolo, ma durante la riproduzione al massimo una ogni 30 s per libro, `ProgressStore.remoteWriteInterval`: iCloud KVS strozza le scritture frequenti), all'avvio e al ritorno in primo piano, e a ogni cambiamento esterno. Si riscrive solo la parte che differisce dal risultato. Se in pausa arriva una posizione più recente, il lettore non salta: propone «Riprendi da dove eri arrivato su iPad? (Capitolo 3, 12:40)» con Riprendi / Ignora (Ignora rende di nuovo più recente la posizione locale). In riproduzione la posizione locale continua a vincere. Cancellare un libro cancella il suo stato locale, non il documento remoto.
 
+## Kindle via KOReader e KOSync (T18)
+
+Il lettore Amazon non espone la posizione. Sul Kindle sbloccato (Paperwhite 7ª gen, firmware 5.16.2.1.1, WinterBreak) si legge con KOReader, che sincronizza la posizione con il protocollo **KOSync** verso un server nostro (`koreader-sync-server` in Docker sul VPS Hetzner, `https://kosync.fabiocrestoni.it`). ReadAlong parla con lo stesso server: la posizione del Kindle arriva su iPhone e iPad e viceversa.
+
+**Protocollo KOSync** (client KOReader, `plugins/kosync.koplugin/api.json`):
+- `POST /users/create` `{"username","password"}` → 201 (402 se esiste);
+- `GET /users/auth` → 200/401; autenticazione con header `x-auth-user: <username>` e `x-auth-key: <md5 esadecimale della password>` su ogni chiamata; `Accept: application/vnd.koreader.v1+json`;
+- `PUT /syncs/progress` `{"document","progress","percentage","device","device_id"}` → 200; il server aggiunge `timestamp` (secondi Unix);
+- `GET /syncs/progress/:document` → `{"document","progress","percentage","device","device_id","timestamp"}`.
+
+**Identità del documento**: `document` = *partial MD5* del file EPUB come lo calcola KOReader (`util.partialMD5`): MD5 della concatenazione di campioni da 1024 byte letti agli offset `1024·4^i` per `i = -1…10` (il primo campione, per via dello shift a 32 bit, parte dall'offset 0), fermandosi al primo campione vuoto. makebook lo calcola sull'EPUB prodotto e lo scrive in `book.json` come `kindle.documento`; l'EPUB è dunque un prodotto di makebook (`--epub`), mai un file di calibre.
+
+**EPUB per il Kindle** (`makebook --epub`): EPUB 3, uno XHTML per capitolo nello stesso ordine di `capitoli`, **nessun altro elemento nello spine** (niente pagina di copertina o frontespizio: la copertina va solo nel manifest), un `<h2>` col titolo del capitolo e poi un `<p>` per paragrafo, il cui testo è la concatenazione delle frasi del paragrafo separate da uno spazio, identica a `chapters/NN.json`.
+
+**Posizione** (`progress`): per gli EPUB KOReader usa un XPointer di crengine del tipo `/body/DocFragment[N]/body/p[M]/text().C` (N = capitolo 1-based nello spine, M = indice 1-based del `<p>` nel `body` del capitolo, C = offset in caratteri nel testo del paragrafo; l'`<h2>` non è un `p` e non conta). ReadAlong traduce XPointer ↔ (capitolo, paragrafo, frase): in lettura cerca la frase il cui intervallo di caratteri contiene C; in scrittura emette l'offset di inizio della frase corrente. `percentage` = avanzamento nel libro (0…1, tempo audio trascorso / durata totale), usato come ripiego se l'XPointer non si interpreta. Il parsing dell'XPointer è tollerante: varianti con `text()[k]`, `/h2`, `/body/DocFragment[N]/body` senza `p` tornano all'inizio del paragrafo o del capitolo.
+
+**Nell'app**: impostazione «Kindle (KOSync)» con URL del server, utente e password (password nel Keychain; si invia solo l'MD5); un `KOSyncClient` con le quattro chiamate; dopo ogni scrittura remota di `ProgressStore` (stessa cadenza di iCloud) si fa `PUT` se il libro ha `kindle.documento`; all'avvio, al ritorno in primo piano e all'apertura del libro si fa `GET`: se `timestamp` è più recente di `updatedAt` locale e `device_id` non è il nostro, la posizione tradotta entra nel flusso di T13 come posizione remota con dispositivo «Kindle» (stessa barra «Riprendi da dove eri arrivato su Kindle?»; in riproduzione si ignora). I segnalibri restano solo su iCloud: KOSync non li trasporta. Errori di rete silenziosi con un indicatore nelle impostazioni («ultima sincronizzazione Kindle: …»).
+
 ## Stile del codice
 
 ```swift

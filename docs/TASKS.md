@@ -127,6 +127,12 @@ Dallo screenshot di Fabio: tra due paragrafi c'è una riga vuota intera. Capire 
 ### [x] T17: Controlli di riproduzione riducibili a pillola (S) — 2026-10-31 (da integrare)
 **Note.** `ReadingSettings.isPlayerMinimized` (chiave `reading.playerMinimized`, default barra completa, globale e persistente). `PlayerBar` mostra la barra completa con chevron "Riduci i controlli" (`player.minimize`) o una pillola a destra con play/pausa, `player.elapsed` e chevron "Mostra i controlli" (`player.expand`); tocco sulla pillola e swipe giù/su (`PlayerBarSwipe`, testato) cambiano stato con animazione `.snappy`. Il testo sta sotto la fascia (trasparente ai lati della pillola, tocchi inclusi); al cambio di inset il bordo alto resta fermo e, riaprendo la barra, la frase in lettura se era in vista torna sopra la barra (`insetChangeTarget`, testato). Screenshot dei due stati sul simulatore.
 
+### [ ] T18: Kindle via KOReader e KOSync (M)
+**Descrizione.** Vedi SPEC «Kindle via KOReader e KOSync». Tre parti indipendenti sul contratto fissato nella spec: **T18a** makebook `--epub` (EPUB 3 deterministico, un XHTML per capitolo, `<h2>` + un `<p>` per paragrafo, partial MD5 alla KOReader scritto in `book.json` → `kindle.documento`); **T18b** app: `KOSyncClient`, traduzione XPointer ↔ frase, impostazioni Kindle (Keychain), aggancio a `ProgressStore` e alla proposta di T13 con dispositivo «Kindle»; **T18c** server `koreader-sync-server` sul VPS (`kosync.fabiocrestoni.it`) e jailbreak del Paperwhite con KOReader puntato al server.
+**Accettazione.** `makebook --epub` produce lo stesso file byte per byte da stesso input; il partial MD5 coincide con quello calcolato da KOReader sul file copiato sul Kindle; posizione letta sul Kindle → proposta su iPhone entro 60 s dall'apertura, e viceversa la posizione dell'iPhone riapre il Kindle sulla stessa pagina.
+**Verifica.** pytest (EPUB, partial MD5 con vettori noti); Swift Testing (parser/serializzatore XPointer, client con URLProtocol finto, aggancio allo store); collaudo su Kindle vero; `scripts/check.sh`.
+**Dipendenze.** T13. **File.** `tools/makebook/src/makebook/epub.py`, `ios/ReadAlong/Sync/KOSync*.swift`, `ios/ReadAlong/UI/Settings/KindleSettingsView.swift`, `docs/adr/0003-kindle-kosync.md`.
+
 ### Checkpoint C
 - [ ] Criteri di successo 1–10 della spec verificati
 - [ ] Approvazione finale di Fabio
