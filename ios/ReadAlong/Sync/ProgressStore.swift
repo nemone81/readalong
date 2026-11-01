@@ -115,6 +115,10 @@ struct FileStateBackend: StateBackend {
 /// - Se il merge cambia lo stato locale, `externalChanges()` lo notifica (il
 ///   lettore propone la posizione, ricarica i segnalibri) e `externalRevision`
 ///   cresce (la libreria ridisegna l'avanzamento).
+/// - Canali esterni al `SyncStore` (Kindle via KOSync, T18): `remoteWrites()`
+///   segnala ogni scrittura remota con la cadenza qui sopra, anche senza
+///   `SyncStore`; `receiveExternalPosition` consegna una posizione arrivata
+///   da fuori, che entra nello stesso merge e nella stessa proposta di T13.
 @MainActor @Observable
 final class ProgressStore {
     /// Uno stato locale cambiato per merito di un altro dispositivo.
@@ -127,6 +131,13 @@ final class ProgressStore {
         let remotePosition: BookState.Position?
         /// Il tipo di dispositivo remoto ("iPad"), se noto e diverso da questo.
         let remoteDevice: String?
+    }
+
+    /// Una scrittura remota avviata: lo stato del libro com'e' stato appena
+    /// mandato (o sta per essere mandato) al `SyncStore`.
+    struct RemoteWrite: Sendable, Equatable {
+        let bookID: String
+        let state: BookState
     }
 
     static let defaultDebounce: Duration = .seconds(2)
@@ -170,6 +181,7 @@ final class ProgressStore {
     @ObservationIgnored private var syncQueue: Task<Void, Never>?
     @ObservationIgnored private var listenTask: Task<Void, Never>?
     @ObservationIgnored private var observers: [UUID: AsyncStream<ExternalChange>.Continuation] = [:]
+    @ObservationIgnored private var writeObservers: [UUID: AsyncStream<RemoteWrite>.Continuation] = [:]
 
     init(
         backend: any StateBackend = FileStateBackend(directory: FileStateBackend.defaultDirectory),
@@ -194,6 +206,9 @@ final class ProgressStore {
             task.cancel()
         }
         for continuation in observers.values {
+            continuation.finish()
+        }
+        for continuation in writeObservers.values {
             continuation.finish()
         }
     }
@@ -309,6 +324,56 @@ final class ProgressStore {
         return stream
     }
 
+    /// Le scritture remote, dal momento della chiamata: una per ogni volta
+    /// che lo stato di un libro parte verso il `SyncStore` (subito su pausa,
+    /// flush, `update` e cambio di capitolo; in riproduzione al massimo una
+    /// ogni `remoteWriteInterval`). Le usa `KindleSync` per la `PUT` su
+    /// KOSync con la stessa cadenza di iCloud. Si emettono anche senza
+    /// `SyncStore`. Gli stati arrivati da fuori (merge) non vi compaiono.
+    func remoteWrites() -> AsyncStream<RemoteWrite> {
+        let (stream, continuation) = AsyncStream.makeStream(of: RemoteWrite.self)
+        let id = UUID()
+        writeObservers[id] = continuation
+        continuation.onTermination = { [weak self] _ in
+            Task { @MainActor in self?.writeObservers[id] = nil }
+        }
+        return stream
+    }
+
+    /// Una posizione arrivata da un canale che non e' il `SyncStore` (il
+    /// Kindle via KOSync, T18), scritta da `device` all'istante `updatedAt`.
+    /// Entra come un record remoto: lo stato locale con questa posizione,
+    /// questo dispositivo e questa data, passato per lo stesso merge di
+    /// iCloud. Se e' piu' recente del locale vince, si salva, si notifica in
+    /// `externalChanges()` (il lettore in pausa propone «Riprendi da dove eri
+    /// arrivato su Kindle?») e prosegue verso il `SyncStore`; altrimenti non
+    /// cambia nulla. Segnalibri e velocita' restano quelli locali.
+    func receiveExternalPosition(
+        _ position: BookState.Position, device: String, updatedAt: Date, for bookID: String
+    ) {
+        let local = state(for: bookID)
+        var remote = local ?? BookState(position: position, updatedAt: updatedAt)
+        remote.position = position
+        remote.device = device
+        remote.updatedAt = BookState.storedDate(updatedAt)
+        if let local, !StateMerge.prefersRemote(local: local, remote: remote) { return }
+        mergeExternal(remote, for: bookID)
+        enqueueReconcile(bookID)
+    }
+
+    /// Merge di uno stato arrivato da fuori (iCloud o un altro canale) con
+    /// quello locale: se il risultato differisce dal locale lo salva e lo
+    /// notifica. Restituisce il risultato del merge.
+    @discardableResult
+    private func mergeExternal(_ remote: BookState, for bookID: String) -> BookState {
+        let local = state(for: bookID)
+        let merged = local.map { StateMerge.merge(local: $0, remote: remote) } ?? StateMerge.pruned(remote)
+        if merged != local {
+            applyExternal(merged, remote: remote, previous: local, for: bookID)
+        }
+        return merged
+    }
+
     private func enqueueReconcile(_ bookID: String) {
         guard sync != nil else { return }
         let previous = syncQueue
@@ -344,11 +409,8 @@ final class ProgressStore {
             return
         case (let local?, nil):
             await push(local, for: bookID)
-        case (let local, let remote?):
-            let merged = local.map { StateMerge.merge(local: $0, remote: remote) } ?? StateMerge.pruned(remote)
-            if merged != local {
-                applyExternal(merged, remote: remote, previous: local, for: bookID)
-            }
+        case (_, let remote?):
+            let merged = mergeExternal(remote, for: bookID)
             if merged != remote {
                 await push(merged, for: bookID)
             }
@@ -393,12 +455,21 @@ final class ProgressStore {
     // MARK: - Interni
 
     private func modify(_ bookID: String, _ change: (inout BookState) -> Void) {
-        var state = state(for: bookID) ?? BookState(
+        let existing = state(for: bookID)
+        var state = existing ?? BookState(
             position: BookState.Position(chapter: 1, sentence: 0, seconds: 0),
             updatedAt: now()
         )
         change(&state)
-        state.updatedAt = BookState.storedDate(now())
+        // Una modifica locale e' sempre piu' recente dello stato che modifica,
+        // anche se quello porta una data nel futuro (orologio di un altro
+        // dispositivo o del server KOSync avanti): altrimenti «Ignora» su una
+        // posizione remota perderebbe il merge successivo.
+        var updatedAt = BookState.storedDate(now())
+        if let existing, updatedAt < existing.updatedAt {
+            updatedAt = BookState.storedDate(existing.updatedAt.addingTimeInterval(0.001))
+        }
+        state.updatedAt = updatedAt
         if let deviceName {
             state.device = deviceName
         }
@@ -447,8 +518,16 @@ final class ProgressStore {
         deferredRemote.removeValue(forKey: bookID)?.cancel()
         remotePending.remove(bookID)
         remoteUrgent.remove(bookID)
-        guard sync != nil else { return }
+        // La finestra vale anche senza `SyncStore`: `remoteWrites()` (KOSync)
+        // ha la stessa cadenza.
         lastRemoteWrite[bookID] = .now
+        if let state = states[bookID] {
+            let write = RemoteWrite(bookID: bookID, state: state)
+            for continuation in writeObservers.values {
+                continuation.yield(write)
+            }
+        }
+        guard sync != nil else { return }
         enqueueReconcile(bookID)
     }
 
