@@ -149,13 +149,12 @@ def body_of(xml: bytes | str) -> ET.Element:
     return body
 
 
-def test_chapter_body_is_h2_then_one_p_per_paragraph() -> None:
+def test_chapter_body_is_only_one_p_per_paragraph() -> None:
     ch = CHAPTERS[0]
     body = body_of(chapter_xhtml(ch.title, ch.timed, "it"))
     kids = list(body)
-    assert [k.tag for k in kids] == [f"{XH}h2", f"{XH}p", f"{XH}p"]
-    assert kids[0].text == "I. Primo"
-    assert [k.text for k in kids[1:]] == ["I. Primo", "L'albero è «grande». Sì & no <forse>."]
+    assert [k.tag for k in kids] == [f"{XH}p", f"{XH}p"]  # niente h2: il primo paragrafo è il titolo
+    assert [k.text for k in kids] == ["I. Primo", "L'albero è «grande». Sì & no <forse>."]
     assert all(len(k) == 0 for k in kids)  # niente span né altro dentro
     assert (body.text or "").strip() == "" and all((k.tail or "").strip() == "" for k in kids)
 
@@ -163,7 +162,8 @@ def test_chapter_body_is_h2_then_one_p_per_paragraph() -> None:
 def test_xml_escaping_and_invalid_characters() -> None:
     xml = chapter_xhtml('a < b & "c"', timed(["x > y & z"]), "it")
     assert "<p>x &gt; y &amp; z</p>" in xml
-    assert body_of(xml)[0].text == 'a < b & "c"'
+    assert body_of(xml)[0].text == "x > y & z"
+    assert ET.fromstring(xml).findtext(f"{XH}head/{XH}title") == 'a < b & "c"'
     with pytest.raises(ValueError, match="non ammesso"):
         chapter_xhtml("T", timed(["campanello\x07"]), "it")
     with pytest.raises(ValueError, match="spazi"):
@@ -196,9 +196,9 @@ def test_fixture_text_survives_character_by_character(fixture_rabook: Path, tmp_
     with zipfile.ZipFile(epub) as z:
         for n, data in enumerate(raw, 1):
             body = body_of(z.read(f"OEBPS/text/{n:02d}.xhtml"))
-            assert body[0].text == book["capitoli"][n - 1]["titolo"]
+            assert body[0].text == book["capitoli"][n - 1]["titolo"]  # primo paragrafo = titolo
             expected = [" ".join(s["t"] for s in par) for par in data["paragrafi"]]
-            assert [p.text for p in body[1:]] == expected
+            assert [p.text for p in body] == expected
 
 
 # --------------------------------------------------------------------------- CLI con --epub
@@ -262,8 +262,8 @@ def test_cli_epub_writes_kindle_document_and_keeps_the_id(tmp_path: Path) -> Non
             for n, ch in enumerate(a["capitoli"], 1):
                 data = json.loads(r.read(ch["file"]))
                 body = body_of(z.read(f"OEBPS/text/{n:02d}.xhtml"))
-                assert body[0].text == ch["titolo"]
-                assert [p.text for p in body[1:]] == [" ".join(s["t"] for s in p) for p in data["paragrafi"]]
+                assert all(k.tag == f"{XH}p" for k in body)
+                assert [p.text for p in body] == [" ".join(s["t"] for s in p) for p in data["paragrafi"]]
 
     # stesso input, stesso EPUB e quindi stesso documento
     again = tmp_path / "again.epub"

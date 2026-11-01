@@ -6,7 +6,7 @@ Il contratto è in docs/SPEC.md («Kindle via KOReader e KOSync»):
   crengine crea un ``DocFragment`` per ogni ``itemref`` dello spine, anche con ``linear="no"``
   (``epubfmt.cpp``: ``appender.setNonLinearFlag(...)`` segna il frammento ma lo crea lo stesso),
   quindi nav e copertina stanno solo nel manifest e ``DocFragment[N]`` è il capitolo N;
-- ogni capitolo: ``<body>`` con un ``<h2>`` (titolo) e poi un ``<p>`` per paragrafo, il cui testo
+- ogni capitolo: ``<body>`` con soltanto un ``<p>`` per paragrafo (il primo è già il titolo), il cui testo
   è la concatenazione delle frasi separate da uno spazio, identica a ``chapters/NN.json``;
 - deterministico: stesso input, stessi byte (date fisse, ordine fisso, nessun orologio).
 
@@ -73,9 +73,9 @@ def chapter_name(n: int) -> str:
 
 
 def chapter_xhtml(title: str, timed: TimedChapter, language: str) -> str:
-    """Un capitolo: ``<h2>`` col titolo, poi un ``<p>`` per paragrafo e nient'altro nel body."""
+    """Un capitolo: un ``<p>`` per paragrafo e nient'altro nel body; il titolo solo nell'``<head>``."""
     lang = escape(language)
-    body = "\n".join([f"<h2>{escape(title)}</h2>", *(f"<p>{escape(t)}</p>" for t in paragraph_texts(timed))])
+    body = "\n".join(f"<p>{escape(t)}</p>" for t in paragraph_texts(timed))
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE html>\n'
         f'<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="{lang}" lang="{lang}">\n'

@@ -92,7 +92,7 @@ Quando succede lo dice su stderr. `--no-pdf-mode` la spegne, `--pdf-mode` la for
 Con `--epub PATH` makebook scrive, accanto al `.rabook`, un EPUB 3 da copiare sul Kindle (KOReader). KOReader sincronizza la posizione via KOSync identificando il libro con il *partial MD5* del file: makebook lo calcola sull'EPUB appena scritto e lo mette in `book.json` come `kindle.documento`, così l'app sa a quale documento KOSync corrisponde il libro. Per questo l'EPUB va sempre da makebook e mai da calibre, e non va modificato dopo (cambierebbe l'MD5).
 
 - Spine = esattamente i capitoli, nell'ordine di `capitoli`: per crengine `DocFragment[N]` è il capitolo N. Indice (`nav.xhtml`) e copertina stanno solo nel manifest, perché crengine crea un `DocFragment` per ogni voce dello spine, anche con `linear="no"`.
-- Ogni capitolo: `<h2>` col titolo, poi un `<p>` per paragrafo con il testo delle frasi unite da uno spazio, identico a `chapters/NN.json` (`<p>[M]` = paragrafo M, contando da 1). Nient'altro nel `body`.
+- Ogni capitolo: solo un `<p>` per paragrafo (il primo è già il titolo del capitolo, che resta anche nell'indice e nell'OPF) con il testo delle frasi unite da uno spazio, identico a `chapters/NN.json` (`<p>[M]` = paragrafo M, contando da 1). Nient'altro nel `body`.
 - Deterministico: date fisse nello zip, `dcterms:modified` fisso, nessuna dipendenza dall'orologio. Stesso input, stesso file, stesso `kindle.documento`.
 - L'`id` del libro non cambia chiedendo l'EPUB.
 - Conviene `--language it` sui PDF: calibre spesso dichiara `en`, e KOReader userebbe la sillabazione inglese.
