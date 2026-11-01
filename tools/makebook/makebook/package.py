@@ -3,13 +3,14 @@
 ::
 
     book.json         {id, titolo, autore, lingua, voce, versioneFormato: 1,
-                       capitoli: [{n, titolo, file, durata}]}
+                       capitoli: [{n, titolo, file, durata}], kindle?: {documento}}
     cover.jpg
     chapters/NN.json  {durata, paragrafi: [[{t, s, e}, …], …]}
     audio/NN.m4a      AAC 64 kbps mono
 
 ``file`` di ogni capitolo è il path del suo JSON nello zip (``chapters/01.json``); l'audio ha lo
-stesso numero (``audio/01.m4a``).
+stesso numero (``audio/01.m4a``). ``kindle`` c'è solo se si è prodotto anche l'EPUB per il Kindle:
+``documento`` è il suo partial MD5 alla KOReader (vedi ``epub.py``).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ FORMAT_VERSION = 1
 _ZIP_DATE = (2026, 1, 1, 0, 0, 0)
 
 # Path dell'utente che non devono mai finire dentro un pacchetto.
+KINDLE_DOCUMENT = re.compile(r"[0-9a-f]{32}")
 LEAK = re.compile(r"/Users/|/home/|/private/(?:tmp|var)/|/var/folders/|[A-Za-z]:\\\\|file://|~/")
 
 
@@ -56,9 +58,16 @@ def book_id(title: str, author: str, text: str) -> str:
 
 
 def build_book_json(
-    *, title: str, author: str, language: str, voice: str, chapters: Sequence[PackChapter]
+    *,
+    title: str,
+    author: str,
+    language: str,
+    voice: str,
+    chapters: Sequence[PackChapter],
+    kindle_document: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    """``kindle_document`` (partial MD5 dell'EPUB) aggiunge ``kindle.documento``; l'id non cambia."""
+    book: dict[str, Any] = {
         "id": book_id(title, author, book_text([c.timed for c in chapters])),
         "titolo": title,
         "autore": author,
@@ -75,6 +84,11 @@ def build_book_json(
             for n, c in enumerate(chapters, 1)
         ],
     }
+    if kindle_document is not None:
+        if not KINDLE_DOCUMENT.fullmatch(kindle_document):
+            raise ValueError(f"kindle.documento non è un MD5 esadecimale minuscolo: {kindle_document!r}")
+        book["kindle"] = {"documento": kindle_document}
+    return book
 
 
 def _dumps(data: Any) -> bytes:
@@ -105,9 +119,17 @@ def write_rabook(
     voice: str,
     chapters: Sequence[PackChapter],
     cover_jpeg: bytes,
+    kindle_document: str | None = None,
 ) -> dict[str, Any]:
     """Scrive il pacchetto (prima in un file temporaneo accanto, poi rinomina). Ritorna book.json."""
-    book = build_book_json(title=title, author=author, language=language, voice=voice, chapters=chapters)
+    book = build_book_json(
+        title=title,
+        author=author,
+        language=language,
+        voice=voice,
+        chapters=chapters,
+        kindle_document=kindle_document,
+    )
     leaks = find_leaks(book) + [x for c in chapters for x in find_leaks(c.timed.to_json())]
     if leaks:
         raise ValueError(f"il testo contiene path di file, pacchetto non scritto: {leaks[:3]}")
@@ -179,6 +201,11 @@ def validate_rabook(path: Path) -> list[str]:
             problems.append(f"versioneFormato {book.get('versioneFormato')!r} invece di {FORMAT_VERSION}")
         if not re.fullmatch(r"[0-9a-f]{64}", str(book.get("id", ""))):
             problems.append("id non è uno sha256 esadecimale")
+        if "kindle" in book:
+            kindle = book["kindle"]
+            doc = kindle.get("documento") if isinstance(kindle, dict) else None
+            if not isinstance(doc, str) or not KINDLE_DOCUMENT.fullmatch(doc):
+                problems.append("kindle.documento non è un MD5 esadecimale minuscolo")
         expected = {"book.json", "cover.jpg"}
         timed: list[TimedChapter] = []
         for k, ch in enumerate(book.get("capitoli", []), 1):

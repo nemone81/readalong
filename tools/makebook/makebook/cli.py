@@ -5,6 +5,8 @@ Esempi::
     makebook libro.epub --list
     makebook libro.epub -o libro.rabook --voice it_IT-paola-medium --chapters 2-24
     makebook libro.pdf -o libro.rabook --title "Il Cigno nero" --author "Nassim Nicholas Taleb"
+    makebook libro.epub -o libro.rabook --epub libro-kindle.epub
+    makebook kindle-id libro-kindle.epub
 """
 
 from __future__ import annotations
@@ -18,8 +20,9 @@ import tempfile
 import time
 from pathlib import Path
 
+from .epub import EpubChapter, partial_md5, write_epub
 from .extract import Book, Chapter, EpubError, looks_like_path, parse_selection, read_epub
-from .package import PackChapter, prepare_cover, validate_rabook, write_rabook
+from .package import PackChapter, book_id, book_text, prepare_cover, validate_rabook, write_rabook
 from .synth import (
     ChapterJob,
     TimedChapter,
@@ -65,11 +68,34 @@ def build_parser() -> argparse.ArgumentParser:
         "--jobs", type=int, default=min(4, os.cpu_count() or 1), help="capitoli sintetizzati in parallelo"
     )
     p.add_argument(
+        "--epub",
+        type=Path,
+        help="scrive anche l'EPUB per il Kindle (KOReader) e ne mette il partial MD5 in book.json",
+    )
+    p.add_argument(
         "--work-dir",
         type=Path,
         help="cartella per audio e tempi intermedi: se rilanci, i capitoli già fatti non si rifanno",
     )
     return p
+
+
+def build_kindle_id_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="makebook kindle-id",
+        description="Stampa il partial MD5 di un file come lo calcola KOReader (identità KOSync).",
+    )
+    p.add_argument("path", type=Path, help="file EPUB (o qualsiasi file)")
+    return p
+
+
+def kindle_id(argv: list[str]) -> int:
+    args = build_kindle_id_parser().parse_args(argv)
+    if not args.path.is_file():
+        print(f"makebook: file non trovato: {args.path.name}", file=sys.stderr)
+        return 2
+    print(partial_md5(args.path))
+    return 0
 
 
 def load_book(source: Path, pdf_mode: bool | None = None) -> Book:
@@ -178,9 +204,31 @@ def run(args: argparse.Namespace) -> int:
             pack.append(PackChapter(c.title, t, job.m4a))
 
         cover = prepare_cover(book.cover)
+        kindle: str | None = None
+        if args.epub:
+            # Prima l'EPUB: il suo partial MD5 va in book.json. L'id resta quello di titolo+autore+testo.
+            epub: Path = args.epub
+            epub.parent.mkdir(parents=True, exist_ok=True)
+            write_epub(
+                epub,
+                book_id=book_id(title, author, book_text([c.timed for c in pack])),
+                title=title,
+                author=author,
+                language=language,
+                chapters=[EpubChapter(c.title, c.timed) for c in pack],
+                cover_jpeg=cover,
+            )
+            kindle = partial_md5(epub)
         out.parent.mkdir(parents=True, exist_ok=True)
         write_rabook(
-            out, title=title, author=author, language=language, voice=voice, chapters=pack, cover_jpeg=cover
+            out,
+            title=title,
+            author=author,
+            language=language,
+            voice=voice,
+            chapters=pack,
+            cover_jpeg=cover,
+            kindle_document=kindle,
         )
 
     problems = validate_rabook(out)
@@ -190,10 +238,15 @@ def run(args: argparse.Namespace) -> int:
     total = sum(c.timed.durata for c in pack)
     size = out.stat().st_size / 1_000_000
     print(f"pronto: {out.name} — {size:.1f} MB, {total / 60:.1f} min, {len(pack)} capitoli")
+    if kindle:
+        print(f"EPUB per il Kindle: {args.epub.name} — kindle.documento {kindle}")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["kindle-id"]:
+        return kindle_id(argv[1:])
     args = build_parser().parse_args(argv)
     try:
         return run(args)
