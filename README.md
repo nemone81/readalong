@@ -34,3 +34,7 @@ App: `cd ios && xcodegen generate` e apri `ReadAlong.xcodeproj`; `ios/Tools/buil
 ## Stato
 
 Uso personale, distribuzione via TestFlight; non è un prodotto da App Store. Lo stato dei task è in `docs/TASKS.md`.
+
+## Licenza
+
+MIT, vedi `LICENSE`.
